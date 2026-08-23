@@ -2,7 +2,7 @@ export function isSameStreamId(candidate, expected) {
   return (
     typeof candidate === "string" &&
     typeof expected === "string" &&
-    candidate.toLocaleLowerCase("en-US") === expected.toLocaleLowerCase("en-US")
+    candidate === expected
   );
 }
 
@@ -41,4 +41,41 @@ export function isTargetVideoEvent(message, expectedStreamId) {
     message.value !== false &&
     isSameStreamId(message.streamID ?? message.streamId, expectedStreamId)
   );
+}
+
+export function getHealthStatsStatus(message, expectedStreamId) {
+  if (message?.cib !== "health") {
+    return "unrelated";
+  }
+
+  const stats = message?.stats ?? message?.value?.stats ?? message?.value;
+  if (!stats || typeof stats !== "object" || Array.isArray(stats)) {
+    return "malformed";
+  }
+
+  return hasTargetInboundStream({ stats }, expectedStreamId) ? "present" : "missing";
+}
+
+export function nextConfirmedMissingCount(currentCount, healthStatus) {
+  if (healthStatus === "present") {
+    return 0;
+  }
+
+  if (healthStatus === "missing") {
+    return currentCount + 1;
+  }
+
+  return currentCount;
+}
+
+export function normalizeConnectionState(value) {
+  if (value === true || value === "true") {
+    return true;
+  }
+
+  if (value === false || value === "false") {
+    return false;
+  }
+
+  return null;
 }

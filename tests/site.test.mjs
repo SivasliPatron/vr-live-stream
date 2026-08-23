@@ -4,10 +4,15 @@ import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import test from "node:test";
 import {
+  getHealthStatsStatus,
   hasTargetInboundStream,
   isSameStreamId,
   isTargetVideoEvent,
+  nextConfirmedMissingCount,
+  normalizeConnectionState,
 } from "../docs/player-health.js";
+import { STREAM_CONFIG } from "../docs/stream-config.js";
+import { buildViewerUrl, CONNECTION_MODE } from "../docs/viewer-url.js";
 
 const root = resolve(import.meta.dirname, "..");
 const read = (path) => readFileSync(resolve(root, path), "utf8");
@@ -16,6 +21,7 @@ test("GitHub-Pages-Dateien und Unterpfade sind vollständig", () => {
   const html = read("docs/index.html");
 
   assert.equal(existsSync(resolve(root, "docs/.nojekyll")), true);
+  assert.equal(existsSync(resolve(root, "docs/viewer-url.js")), true);
   assert.match(html, /href="\.\/styles\.css\?v=[^"]+"/);
   assert.match(html, /src="\.\/app\.js\?v=[^"]+"/);
   assert.doesNotMatch(html, /(?:href|src)="\/(?!\/)/);
@@ -26,19 +32,41 @@ test("GitHub-Pages-Dateien und Unterpfade sind vollständig", () => {
 test("Viewer hat nur die vorgesehenen Zustände und Bedienelemente", () => {
   const html = read("docs/index.html");
   const app = read("docs/app.js");
+  const viewerUrl = read("docs/viewer-url.js");
 
   for (const label of ["OFFLINE", "VERBINDEN", "LIVE", "Neu verbinden", "Vollbild"]) {
     assert.match(`${html}\n${app}`, new RegExp(label, "i"));
   }
 
-  assert.match(app, /searchParams\.set\("view"/);
-  assert.match(app, /searchParams\.set\("audience"/);
-  assert.match(app, /searchParams\.set\("cleanoutput"/);
-  assert.match(app, /searchParams\.set\("screensharestereo"/);
-  assert.match(app, /searchParams\.set\("retry"/);
+  assert.match(viewerUrl, /searchParams\.set\("view"/);
+  assert.match(viewerUrl, /searchParams\.set\("audience"/);
+  assert.match(viewerUrl, /searchParams\.set\("cleanoutput"/);
+  assert.match(viewerUrl, /searchParams\.set\("screensharestereo"/);
+  assert.match(viewerUrl, /searchParams\.set\("retry"/);
   assert.match(app, /scheduleReconnect/);
   assert.match(app, /event\.origin !== VDO_ORIGIN/);
   assert.match(app, /event\.source !== player\?\.contentWindow/);
+});
+
+test("schwierige Netze erhalten automatische Wiederherstellung und Relay-Fallback", () => {
+  const directUrl = new URL(buildViewerUrl(STREAM_CONFIG, CONNECTION_MODE.direct));
+  const compatibilityUrl = new URL(
+    buildViewerUrl(STREAM_CONFIG, CONNECTION_MODE.compatibility),
+  );
+  const app = read("docs/app.js");
+
+  assert.equal(directUrl.searchParams.get("view"), STREAM_CONFIG.streamId);
+  assert.equal(directUrl.searchParams.get("audience"), STREAM_CONFIG.audienceToken);
+  assert.equal(directUrl.searchParams.get("autorecover"), "1");
+  assert.equal(directUrl.searchParams.get("autorelay"), "1");
+  assert.equal(directUrl.searchParams.get("p2pfailtimeout"), "12000");
+  assert.equal(directUrl.searchParams.get("pendingicettl"), "20000");
+  assert.equal(directUrl.searchParams.has("relay"), false);
+  assert.equal(compatibilityUrl.searchParams.has("relay"), true);
+  assert.ok(STREAM_CONFIG.connectTimeoutMs >= 60_000);
+  assert.match(app, /MAX_CONFIRMED_MISSING_STATS = 25/);
+  assert.match(app, /DISCONNECT_GRACE_MS = 90_000/);
+  assert.match(app, /connect\(\{ mode: CONNECTION_MODE\.compatibility \}\)/);
 });
 
 test("Vollbild hat einen browserunabhängigen Rückfallmodus", () => {
@@ -72,7 +100,8 @@ test("eingebetteter Player erhält keine Kamera- oder Mikrofonrechte", () => {
 test("nur der konfigurierte Videostream kann den Live-Zustand auslösen", () => {
   const target = "vr-TestStream";
 
-  assert.equal(isSameStreamId("VR-teststream", target), true);
+  assert.equal(isSameStreamId("VR-teststream", target), false);
+  assert.equal(isSameStreamId(target, target), true);
   assert.equal(
     isTargetVideoEvent(
       { action: "new-video-track-added", value: true, streamID: target },
@@ -112,6 +141,37 @@ test("nur der konfigurierte Videostream kann den Live-Zustand auslösen", () => 
     ),
     true,
   );
+});
+
+test("Health-Check zählt nur bestätigte Antworten ohne Zielstream", () => {
+  const target = "vr-AbCd1234";
+  let confirmedMissing = 0;
+
+  const noReply = getHealthStatsStatus({ action: "unrelated" }, target);
+  const malformedReply = getHealthStatsStatus({ cib: "health", stats: null }, target);
+  const missingReply = getHealthStatsStatus(
+    { cib: "health", stats: { inbound: {} } },
+    target,
+  );
+  const presentReply = getHealthStatsStatus(
+    { cib: "health", stats: { inbound: { [target]: {} } } },
+    target,
+  );
+
+  confirmedMissing = nextConfirmedMissingCount(confirmedMissing, noReply);
+  confirmedMissing = nextConfirmedMissingCount(confirmedMissing, malformedReply);
+  assert.equal(confirmedMissing, 0, "Schweigen oder kaputte Antworten zählen nicht");
+
+  confirmedMissing = nextConfirmedMissingCount(confirmedMissing, missingReply);
+  assert.equal(confirmedMissing, 1);
+  confirmedMissing = nextConfirmedMissingCount(confirmedMissing, presentReply);
+  assert.equal(confirmedMissing, 0, "der Zielstream setzt den Zähler zurück");
+
+  assert.equal(normalizeConnectionState(true), true);
+  assert.equal(normalizeConnectionState("true"), true);
+  assert.equal(normalizeConnectionState(false), false);
+  assert.equal(normalizeConnectionState("false"), false);
+  assert.equal(normalizeConnectionState("unknown"), null);
 });
 
 test("öffentliche Stream-Konfiguration ist vollständig", () => {

@@ -1,6 +1,6 @@
 # VR Live
 
-Eine reine Zuschauer-Seite für einen privaten Meta-Quest-Livestream mit bis zu drei bekannten Personen.
+Eine reine Zuschauer-Seite für einen privaten Meta-Quest-Livestream mit mehreren bekannten Personen.
 
 **Zuschauer-Link:** <https://sivaslipatron.github.io/vr-live-stream/>
 
@@ -37,12 +37,20 @@ Zuschauer klicken auf **Stream ansehen**. Die Seite bietet ausschließlich:
 
 Die Seite fordert keine Kamera- oder Mikrofonberechtigung an und enthält weder Chat noch Senderfunktionen.
 
+## Wenn bei einem Zuschauer nur „VERBINDEN“ steht
+
+1. Auf dem Sender-PC alle alten VDO.Ninja-Sender-Tabs schließen und den Stream erneut mit `02 VR-Stream 720p60 (Chrome).lnk` starten.
+2. Der betroffene Zuschauer schließt alle alten VR-Live-Tabs und öffnet den GitHub-Link neu. Nach einer Aktualisierung hilft am PC zusätzlich `Strg+F5`, am Handy ein privater Tab.
+3. **Stream ansehen** anklicken und bis zu 65 Sekunden warten. Scheitert der Direktweg, probiert die Seite automatisch die Relay-Kompatibilitätsverbindung.
+4. Den Link möglichst direkt in Chrome, Firefox, Edge oder Safari öffnen, nicht im eingebauten Browser einer Messenger-App.
+
 ## Sicherheit und Grenzen
 
 - Der Publisher-Token und die vollständigen Sender-Links bleiben ausschließlich im lokalen, ignorierten `.private`-Ordner.
 - Im öffentlichen Repository steht nur der separate VDO.Ninja-Zuschauer-Token. Er verhindert fremdes Senden, aber nicht die Weitergabe des Zuschauer-Links.
 - VDO.Ninja arbeitet überwiegend Peer-to-Peer. Dadurch können die öffentlichen IP-Adressen der beteiligten Geräte technisch sichtbar sein.
-- `maxviewers=3` begrenzt Verbindungen, ist aber keine Zugangskontrolle.
+- Die frühere Drei-Zuschauer-Sperre wurde auf sechs gleichzeitige Verbindungsslots angehoben. Das gibt den vorgesehenen 1–3 Zuschauern Reserve für Wiederverbindungen, ohne den Sender unbegrenzt zu belasten.
+- Bei schwierigen WLAN-, Mobilfunk- oder Firewall-Netzen versucht die Zuschauer-Seite nach dem Direktweg automatisch eine Relay-Kompatibilitätsverbindung.
 - Es gibt in V1 keine Aufnahme, Anmeldung, Zuschauerverwaltung oder eigene Domain.
 
 ## Lokale Prüfung

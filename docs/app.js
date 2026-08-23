@@ -1,9 +1,12 @@
-import { STREAM_CONFIG } from "./stream-config.js";
+import { STREAM_CONFIG } from "./stream-config.js?v=20260824-2";
 import {
-  hasTargetInboundStream,
+  getHealthStatsStatus,
   isSameStreamId,
   isTargetVideoEvent,
-} from "./player-health.js";
+  nextConfirmedMissingCount,
+  normalizeConnectionState,
+} from "./player-health.js?v=20260824-2";
+import { buildViewerUrl, CONNECTION_MODE } from "./viewer-url.js?v=20260824-2";
 
 const elements = {
   statusPill: document.querySelector("#statusPill"),
@@ -25,10 +28,12 @@ const elements = {
 
 const VDO_ORIGIN = new URL(STREAM_CONFIG.viewerBaseUrl).origin;
 const STATS_INTERVAL_MS = 4_000;
-const MAX_MISSED_STATS = 5;
-const DISCONNECT_GRACE_MS = 16_000;
+const MAX_CONFIRMED_MISSING_STATS = 25;
+const DISCONNECT_GRACE_MS = 90_000;
 const FULLSCREEN_CHANGE_TIMEOUT_MS = 450;
 const LIVE_CONTROL_NOTE = "Direkte Zuschauer-Verbindung · keine Kamera · kein Mikrofon";
+const COMPATIBILITY_CONTROL_NOTE =
+  "Kompatibilitätsverbindung über Relay · keine Kamera · kein Mikrofon";
 
 let player = null;
 let state = "offline";
@@ -38,9 +43,10 @@ let connectionTimer = null;
 let disconnectTimer = null;
 let reconnectTimer = null;
 let statsTimer = null;
-let missedStats = 0;
+let confirmedMissingStats = 0;
 let fallbackFullscreen = false;
 let fullscreenWasActive = false;
+let connectionMode = CONNECTION_MODE.direct;
 
 function hasUsableValue(value) {
   return (
@@ -83,6 +89,12 @@ function updateSoundLabel() {
     "aria-label",
     muted ? "Ton einschalten" : "Ton ausschalten",
   );
+}
+
+function getLiveControlNote() {
+  return connectionMode === CONNECTION_MODE.compatibility
+    ? COMPATIBILITY_CONTROL_NOTE
+    : LIVE_CONTROL_NOTE;
 }
 
 function getNativeFullscreenElement() {
@@ -182,7 +194,7 @@ async function exitFullscreen() {
 
   syncFullscreenUi();
   if (wasFallbackFullscreen && state === "live") {
-    elements.controlNote.textContent = LIVE_CONTROL_NOTE;
+    elements.controlNote.textContent = getLiveControlNote();
   }
 }
 
@@ -226,19 +238,28 @@ function setState(nextState) {
 
   if (nextState === "live") {
     elements.statusLabel.textContent = "LIVE";
-    elements.controlNote.textContent = LIVE_CONTROL_NOTE;
+    elements.controlNote.textContent = getLiveControlNote();
     updateSoundLabel();
     return;
   }
 
   if (nextState === "connecting") {
+    const compatibilityMode = connectionMode === CONNECTION_MODE.compatibility;
     elements.statusLabel.textContent = "VERBINDEN";
-    elements.placeholderKicker.textContent = "VERBINDUNG WIRD AUFGEBAUT";
-    elements.placeholderTitle.textContent = "Die Quest wird gesucht …";
-    elements.placeholderText.textContent = "Das dauert normalerweise nur wenige Sekunden.";
+    elements.placeholderKicker.textContent = compatibilityMode
+      ? "KOMPATIBILITÄTSVERBINDUNG"
+      : "VERBINDUNG WIRD AUFGEBAUT";
+    elements.placeholderTitle.textContent = compatibilityMode
+      ? "Ein anderer Netzwerkweg wird ausprobiert …"
+      : "Die Quest wird gesucht …";
+    elements.placeholderText.textContent = compatibilityMode
+      ? "Die Seite verwendet jetzt automatisch einen Relay-Server für dieses Netzwerk."
+      : "Bei schwierigen WLAN- oder Mobilfunknetzen kann das bis zu einer Minute dauern.";
     elements.primaryActionLabel.textContent = "Bitte warten";
     elements.primaryAction.disabled = true;
-    elements.controlNote.textContent = "Sichere Verbindung zu VDO.Ninja wird hergestellt";
+    elements.controlNote.textContent = compatibilityMode
+      ? "Automatischer Ersatzweg wird hergestellt"
+      : "Sichere Direktverbindung zu VDO.Ninja wird hergestellt";
     return;
   }
 
@@ -265,17 +286,6 @@ function setState(nextState) {
     : "Nur ansehen · keine Kamera · kein Mikrofon";
 }
 
-function buildViewerUrl() {
-  const url = new URL(STREAM_CONFIG.viewerBaseUrl);
-  url.searchParams.set("view", STREAM_CONFIG.streamId);
-  url.searchParams.set("audience", STREAM_CONFIG.audienceToken);
-  url.searchParams.set("cleanoutput", "");
-  url.searchParams.set("screensharestereo", "");
-  url.searchParams.set("retry", "15");
-  url.searchParams.set("retrytimeout", "5000");
-  return url.toString();
-}
-
 function sendToPlayer(message) {
   if (!player?.contentWindow) {
     return;
@@ -300,13 +310,13 @@ function scheduleReconnect() {
 
   reconnectTimer = window.setTimeout(() => {
     reconnectTimer = null;
-    connect();
+    connect({ mode: CONNECTION_MODE.direct });
   }, STREAM_CONFIG.reconnectDelayMs);
 }
 
 function markOffline({ reconnect = true } = {}) {
   removePlayer();
-  missedStats = 0;
+  confirmedMissingStats = 0;
   setState("offline");
 
   if (reconnect) {
@@ -323,7 +333,7 @@ function markLive() {
   connectionTimer = null;
   clearTimer(disconnectTimer);
   disconnectTimer = null;
-  missedStats = 0;
+  confirmedMissingStats = 0;
   if (state !== "live") {
     setState("live");
     sendToPlayer({ mute: muted });
@@ -336,18 +346,10 @@ function requestStats() {
     return;
   }
 
-  if (state === "live") {
-    missedStats += 1;
-    if (missedStats >= MAX_MISSED_STATS) {
-      markOffline();
-      return;
-    }
-  }
-
   sendToPlayer({ getStats: true, cib: "health" });
 }
 
-function connect() {
+function connect({ mode = CONNECTION_MODE.direct } = {}) {
   if (!isConfigured || !navigator.onLine) {
     setState("offline");
     return;
@@ -356,12 +358,13 @@ function connect() {
   viewerStarted = true;
   clearReconnectTimer();
   removePlayer();
-  missedStats = 0;
+  confirmedMissingStats = 0;
+  connectionMode = mode;
   setState("connecting");
 
   player = document.createElement("iframe");
   player.title = "VR-Livestream";
-  player.src = buildViewerUrl();
+  player.src = buildViewerUrl(STREAM_CONFIG, connectionMode);
   player.allow = "autoplay; fullscreen";
   player.referrerPolicy = "no-referrer";
   player.setAttribute("allowfullscreen", "");
@@ -380,9 +383,16 @@ function connect() {
 
   statsTimer = window.setInterval(requestStats, STATS_INTERVAL_MS);
   connectionTimer = window.setTimeout(() => {
-    if (state === "connecting") {
-      markOffline();
+    if (state !== "connecting") {
+      return;
     }
+
+    if (connectionMode === CONNECTION_MODE.direct) {
+      connect({ mode: CONNECTION_MODE.compatibility });
+      return;
+    }
+
+    markOffline();
   }, STREAM_CONFIG.connectTimeoutMs);
 }
 
@@ -396,26 +406,43 @@ window.addEventListener("message", (event) => {
     return;
   }
 
-  if (
-    isTargetVideoEvent(message, STREAM_CONFIG.streamId) ||
-    hasTargetInboundStream(message, STREAM_CONFIG.streamId)
-  ) {
-    missedStats = 0;
+  if (isTargetVideoEvent(message, STREAM_CONFIG.streamId)) {
+    confirmedMissingStats = 0;
     markLive();
     return;
   }
 
-  const isTargetConnectionEvent =
-    message.action === "push-connection" &&
-    isSameStreamId(message.streamID ?? message.streamId, STREAM_CONFIG.streamId);
+  const healthStatus = getHealthStatsStatus(message, STREAM_CONFIG.streamId);
+  if (healthStatus !== "unrelated") {
+    confirmedMissingStats = nextConfirmedMissingCount(
+      confirmedMissingStats,
+      healthStatus,
+    );
 
-  if (isTargetConnectionEvent && message.value === true) {
+    if (healthStatus === "present") {
+      markLive();
+    } else if (
+      healthStatus === "missing" &&
+      state === "live" &&
+      confirmedMissingStats >= MAX_CONFIRMED_MISSING_STATS
+    ) {
+      markOffline();
+    }
+    return;
+  }
+
+  const isTargetConnectionEvent =
+    ["push-connection", "view-connection"].includes(message.action) &&
+    isSameStreamId(message.streamID ?? message.streamId, STREAM_CONFIG.streamId);
+  const connectionState = normalizeConnectionState(message.value);
+
+  if (isTargetConnectionEvent && connectionState === true) {
     clearTimer(disconnectTimer);
     disconnectTimer = null;
     return;
   }
 
-  if (isTargetConnectionEvent && message.value === false && state === "live") {
+  if (isTargetConnectionEvent && connectionState === false && state === "live") {
     clearTimer(disconnectTimer);
     disconnectTimer = window.setTimeout(() => {
       if (state === "live") {
@@ -425,8 +452,12 @@ window.addEventListener("message", (event) => {
   }
 });
 
-elements.primaryAction.addEventListener("click", connect);
-elements.reconnectButton.addEventListener("click", connect);
+elements.primaryAction.addEventListener("click", () => {
+  connect({ mode: CONNECTION_MODE.direct });
+});
+elements.reconnectButton.addEventListener("click", () => {
+  connect({ mode: CONNECTION_MODE.direct });
+});
 
 elements.soundButton.addEventListener("click", () => {
   muted = !muted;
@@ -454,13 +485,13 @@ window.addEventListener("offline", () => {
 
 window.addEventListener("online", () => {
   if (viewerStarted && state === "offline") {
-    connect();
+    connect({ mode: CONNECTION_MODE.direct });
   }
 });
 
 document.addEventListener("visibilitychange", () => {
   if (!document.hidden && viewerStarted && state === "offline") {
-    connect();
+    connect({ mode: CONNECTION_MODE.direct });
   }
 });
 
