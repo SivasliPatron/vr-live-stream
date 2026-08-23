@@ -16,15 +16,15 @@ GitHub Pages liefert nur die Website aus. Bild und Spielton werden von VDO.Ninja
 
 Die Sender-Verknüpfungen liegen nur lokal im ignorierten Ordner `.private` und werden niemals zu GitHub übertragen.
 
-1. `01-Meta-Casting.url` öffnen und bei Meta anmelden.
+1. `01 Meta-Casting (Chrome).lnk` öffnen und bei Meta anmelden.
 2. In der Quest **Kamera → Casten → Computer** auswählen.
 3. Warten, bis das Quest-Bild im Meta-Casting-Tab sichtbar ist.
-4. `02-VR-Stream-720p60.url` öffnen.
+4. `02 VR-Stream 720p60 (Chrome).lnk` öffnen.
 5. Im Chrome-Freigabedialog den **Meta-Casting-Tab** auswählen.
 6. **Tab-Audio teilen** eingeschaltet lassen und die Freigabe starten.
 7. Den öffentlichen GitHub-Link an die Zuschauer senden.
 
-Bei reproduzierbaren Bild- oder Tonaussetzern den Sender beenden und mit `03-VR-Stream-720p30.url` neu starten. Beide Varianten verwenden dieselbe Stream-ID und denselben Zuschauer-Link.
+Bei reproduzierbaren Bild- oder Tonaussetzern den Sender beenden und mit `03 VR-Stream 720p30 (Chrome).lnk` neu starten. Beide Varianten verwenden dieselbe Stream-ID und denselben Zuschauer-Link.
 
 ## Zuschauer-Seite
 
