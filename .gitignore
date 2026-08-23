@@ -1,0 +1,16 @@
+# Lokale Abhaengigkeiten und Testartefakte
+node_modules/
+coverage/
+
+# Private Senderdaten - niemals nach GitHub uebertragen
+.private/
+
+# Lokale Werkzeuge und Betriebssystemdateien
+.DS_Store
+Thumbs.db
+*.log
+
+# Ueberreste lokaler Vorschauen
+.wrangler/
+.vinext/
+dist/

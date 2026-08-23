@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#070810" />
+    <meta name="referrer" content="no-referrer" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; frame-src https://vdo.ninja; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'"
+    />
+    <meta
+      name="description"
+      content="VR Live – die Zuschauer-Seite für einen direkten Meta-Quest-Livestream."
+    />
+    <meta property="og:title" content="VR Live" />
+    <meta
+      property="og:description"
+      content="Schaue dem Meta-Quest-Livestream direkt im Browser zu."
+    />
+    <meta property="og:type" content="website" />
+    <meta
+      property="og:url"
+      content="https://sivaslipatron.github.io/vr-live-stream/"
+    />
+    <title>VR Live</title>
+    <link rel="stylesheet" href="./styles.css" />
+    <script type="module" src="./app.js"></script>
+  </head>
+  <body>
+    <div class="ambient ambient-one" aria-hidden="true"></div>
+    <div class="ambient ambient-two" aria-hidden="true"></div>
+
+    <header class="site-header">
+      <a class="brand" href="./" aria-label="VR Live Startseite">
+        <span class="brand-mark" aria-hidden="true"><span></span></span>
+        <span class="brand-copy">
+          <strong>VR LIVE</strong>
+          <small>QUEST VIEW</small>
+        </span>
+      </a>
+
+      <div class="status-pill" id="statusPill" data-state="offline" role="status">
+        <span class="status-dot" aria-hidden="true"></span>
+        <span id="statusLabel">OFFLINE</span>
+      </div>
+    </header>
+
+    <main>
+      <section class="stream-panel" aria-labelledby="streamTitle">
+        <div class="panel-heading">
+          <div>
+            <p class="eyebrow">DIREKTE VR-ÜBERTRAGUNG</p>
+            <h1 id="streamTitle">Mittendrin. Ohne selbst die Brille zu tragen.</h1>
+          </div>
+          <div class="quality-badge" aria-label="Zielqualität 720p bei 60 Bildern pro Sekunde">
+            <span>720P</span>
+            <i></i>
+            <span>60 FPS</span>
+          </div>
+        </div>
+
+        <div class="player-frame" id="playerFrame" data-player-state="offline">
+          <div class="corner corner-tl" aria-hidden="true"></div>
+          <div class="corner corner-tr" aria-hidden="true"></div>
+          <div class="corner corner-bl" aria-hidden="true"></div>
+          <div class="corner corner-br" aria-hidden="true"></div>
+
+          <div class="player-slot" id="playerSlot" aria-live="polite"></div>
+
+          <div class="player-placeholder" id="playerPlaceholder">
+            <div class="signal-visual" aria-hidden="true">
+              <span class="signal-core"></span>
+              <span class="signal-ring signal-ring-one"></span>
+              <span class="signal-ring signal-ring-two"></span>
+              <span class="signal-scan"></span>
+            </div>
+            <p class="placeholder-kicker" id="placeholderKicker">STREAM BEREIT</p>
+            <h2 id="placeholderTitle">Prüfe, ob die Quest gerade live ist.</h2>
+            <p id="placeholderText">
+              Mit einem Klick wird eine direkte, reine Zuschauer-Verbindung aufgebaut.
+            </p>
+            <button class="primary-action" id="primaryAction" type="button">
+              <span class="play-symbol" aria-hidden="true"></span>
+              <span id="primaryActionLabel">Stream ansehen</span>
+            </button>
+          </div>
+
+          <div class="live-flag" aria-hidden="true">
+            <span></span>
+            LIVE
+          </div>
+        </div>
+
+        <div class="player-controls" aria-label="Wiedergabesteuerung">
+          <button id="soundButton" class="control-button" type="button" disabled>
+            <span class="control-icon" aria-hidden="true">◖</span>
+            <span id="soundLabel">Ton</span>
+          </button>
+          <button id="fullscreenButton" class="control-button" type="button" disabled>
+            <span class="control-icon fullscreen-icon" aria-hidden="true">⌗</span>
+            <span>Vollbild</span>
+          </button>
+          <button id="reconnectButton" class="control-button" type="button" disabled>
+            <span class="control-icon reconnect-icon" aria-hidden="true">↻</span>
+            <span>Neu verbinden</span>
+          </button>
+          <p class="control-note" id="controlNote">Nur ansehen · keine Kamera · kein Mikrofon</p>
+        </div>
+      </section>
+
+      <section class="trust-strip" aria-label="Eigenschaften der Übertragung">
+        <article>
+          <span class="trust-number">01</span>
+          <div>
+            <h2>Nur zuschauen</h2>
+            <p>Keine Steuerung der Quest und kein Zugriff auf dein Gerät.</p>
+          </div>
+        </article>
+        <article>
+          <span class="trust-number">02</span>
+          <div>
+            <h2>Direkte Verbindung</h2>
+            <p>Für bis zu drei bekannte Zuschauer mit geringer Verzögerung.</p>
+          </div>
+        </article>
+        <article>
+          <span class="trust-number">03</span>
+          <div>
+            <h2>Ohne Anmeldung</h2>
+            <p>Link öffnen, Stream starten und direkt im Browser ansehen.</p>
+          </div>
+        </article>
+      </section>
+    </main>
+
+    <footer>
+      <p>VR Live <span aria-hidden="true">·</span> Persönlicher Quest-Stream</p>
+      <p class="privacy-note">
+        Die Übertragung ist überwiegend Peer-to-Peer; je nach Netzwerk kann ein
+        Relay-Server verwendet werden. Beteiligte IP-Adressen können technisch sichtbar sein.
+      </p>
+    </footer>
+
+    <noscript>
+      <p class="noscript-note">JavaScript muss aktiviert sein, um den Stream anzusehen.</p>
+    </noscript>
+  </body>
+</html>
