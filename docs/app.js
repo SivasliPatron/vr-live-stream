@@ -18,6 +18,7 @@ const elements = {
   soundButton: document.querySelector("#soundButton"),
   soundLabel: document.querySelector("#soundLabel"),
   fullscreenButton: document.querySelector("#fullscreenButton"),
+  exitFullscreenButton: document.querySelector("#exitFullscreenButton"),
   reconnectButton: document.querySelector("#reconnectButton"),
   controlNote: document.querySelector("#controlNote"),
 };
@@ -26,6 +27,8 @@ const VDO_ORIGIN = new URL(STREAM_CONFIG.viewerBaseUrl).origin;
 const STATS_INTERVAL_MS = 4_000;
 const MAX_MISSED_STATS = 5;
 const DISCONNECT_GRACE_MS = 16_000;
+const FULLSCREEN_CHANGE_TIMEOUT_MS = 450;
+const LIVE_CONTROL_NOTE = "Direkte Zuschauer-Verbindung · keine Kamera · kein Mikrofon";
 
 let player = null;
 let state = "offline";
@@ -36,6 +39,8 @@ let disconnectTimer = null;
 let reconnectTimer = null;
 let statsTimer = null;
 let missedStats = 0;
+let fallbackFullscreen = false;
+let fullscreenWasActive = false;
 
 function hasUsableValue(value) {
   return (
@@ -80,6 +85,134 @@ function updateSoundLabel() {
   );
 }
 
+function getNativeFullscreenElement() {
+  return document.fullscreenElement ?? document.webkitFullscreenElement ?? null;
+}
+
+function setFallbackFullscreen(enabled, { moveFocus = true } = {}) {
+  fallbackFullscreen = enabled;
+  elements.playerFrame.classList.toggle("is-window-fullscreen", enabled);
+  document.body.classList.toggle("has-window-fullscreen", enabled);
+  syncFullscreenUi({ moveFocus });
+}
+
+function syncFullscreenUi({ moveFocus = true } = {}) {
+  const active = Boolean(getNativeFullscreenElement()) || fallbackFullscreen;
+  elements.fullscreenButton.setAttribute("aria-pressed", String(active));
+  elements.fullscreenButton.setAttribute(
+    "aria-label",
+    active ? "Vollbild schließen" : "Vollbild öffnen",
+  );
+
+  if (moveFocus && active !== fullscreenWasActive) {
+    const target = active ? elements.exitFullscreenButton : elements.fullscreenButton;
+    window.requestAnimationFrame(() => {
+      if (target.isConnected && !target.disabled) {
+        target.focus({ preventScroll: true });
+      }
+    });
+  }
+
+  fullscreenWasActive = active;
+}
+
+function handleNativeFullscreenChange() {
+  if (getNativeFullscreenElement() && fallbackFullscreen) {
+    fallbackFullscreen = false;
+    elements.playerFrame.classList.remove("is-window-fullscreen");
+    document.body.classList.remove("has-window-fullscreen");
+  }
+
+  syncFullscreenUi();
+}
+
+function waitForNativeFullscreen() {
+  if (getNativeFullscreenElement()) {
+    return Promise.resolve(true);
+  }
+
+  return new Promise((resolve) => {
+    let finished = false;
+    const events = [
+      "fullscreenchange",
+      "webkitfullscreenchange",
+      "fullscreenerror",
+      "webkitfullscreenerror",
+    ];
+
+    const finish = () => {
+      if (finished) {
+        return;
+      }
+
+      finished = true;
+      window.clearTimeout(timeout);
+      for (const eventName of events) {
+        document.removeEventListener(eventName, finish);
+      }
+      resolve(Boolean(getNativeFullscreenElement()));
+    };
+
+    const timeout = window.setTimeout(finish, FULLSCREEN_CHANGE_TIMEOUT_MS);
+    for (const eventName of events) {
+      document.addEventListener(eventName, finish, { once: true });
+    }
+  });
+}
+
+function logFullscreenFallback(error) {
+  const reason = error instanceof Error ? error.name : "FullscreenUnavailable";
+  console.debug(`[VR Live] ${reason}; fensterfüllender Modus wird verwendet.`);
+}
+
+async function exitFullscreen() {
+  const wasFallbackFullscreen = fallbackFullscreen;
+  if (wasFallbackFullscreen) {
+    setFallbackFullscreen(false);
+  }
+
+  const exit = document.exitFullscreen ?? document.webkitExitFullscreen;
+  if (getNativeFullscreenElement() && typeof exit === "function") {
+    try {
+      await Promise.resolve(exit.call(document));
+    } catch (error) {
+      logFullscreenFallback(error);
+    }
+  }
+
+  syncFullscreenUi();
+  if (wasFallbackFullscreen && state === "live") {
+    elements.controlNote.textContent = LIVE_CONTROL_NOTE;
+  }
+}
+
+async function toggleFullscreen() {
+  if (getNativeFullscreenElement() || fallbackFullscreen) {
+    await exitFullscreen();
+    return;
+  }
+
+  const request =
+    elements.playerFrame.requestFullscreen ?? elements.playerFrame.webkitRequestFullscreen;
+  const nativeFullscreenBlocked =
+    document.fullscreenEnabled === false && document.webkitFullscreenEnabled !== true;
+
+  if (!nativeFullscreenBlocked && typeof request === "function") {
+    try {
+      await Promise.resolve(request.call(elements.playerFrame));
+      if (getNativeFullscreenElement() || (await waitForNativeFullscreen())) {
+        syncFullscreenUi();
+        return;
+      }
+    } catch (error) {
+      logFullscreenFallback(error);
+    }
+  }
+
+  setFallbackFullscreen(true);
+  elements.controlNote.textContent = "Fensterfüllender Modus aktiv · mit × wieder schließen";
+}
+
 function setState(nextState) {
   state = nextState;
   elements.statusPill.dataset.state = nextState;
@@ -93,7 +226,7 @@ function setState(nextState) {
 
   if (nextState === "live") {
     elements.statusLabel.textContent = "LIVE";
-    elements.controlNote.textContent = "Direkte Zuschauer-Verbindung · keine Kamera · kein Mikrofon";
+    elements.controlNote.textContent = LIVE_CONTROL_NOTE;
     updateSoundLabel();
     return;
   }
@@ -301,11 +434,14 @@ elements.soundButton.addEventListener("click", () => {
   updateSoundLabel();
 });
 
-elements.fullscreenButton.addEventListener("click", async () => {
-  try {
-    await elements.playerFrame.requestFullscreen();
-  } catch {
-    elements.controlNote.textContent = "Vollbild wurde vom Browser blockiert";
+elements.fullscreenButton.addEventListener("click", toggleFullscreen);
+elements.exitFullscreenButton.addEventListener("click", exitFullscreen);
+
+document.addEventListener("fullscreenchange", handleNativeFullscreenChange);
+document.addEventListener("webkitfullscreenchange", handleNativeFullscreenChange);
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && fallbackFullscreen) {
+    exitFullscreen();
   }
 });
 
@@ -329,6 +465,7 @@ document.addEventListener("visibilitychange", () => {
 });
 
 window.addEventListener("beforeunload", () => {
+  setFallbackFullscreen(false, { moveFocus: false });
   clearReconnectTimer();
   removePlayer();
 });

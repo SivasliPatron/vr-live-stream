@@ -16,8 +16,8 @@ test("GitHub-Pages-Dateien und Unterpfade sind vollständig", () => {
   const html = read("docs/index.html");
 
   assert.equal(existsSync(resolve(root, "docs/.nojekyll")), true);
-  assert.match(html, /href="\.\/styles\.css"/);
-  assert.match(html, /src="\.\/app\.js"/);
+  assert.match(html, /href="\.\/styles\.css\?v=[^"]+"/);
+  assert.match(html, /src="\.\/app\.js\?v=[^"]+"/);
   assert.doesNotMatch(html, /(?:href|src)="\/(?!\/)/);
   assert.match(html, /frame-src https:\/\/vdo\.ninja/);
   assert.match(html, /content="https:\/\/sivaslipatron\.github\.io\/vr-live-stream\/"/);
@@ -39,6 +39,24 @@ test("Viewer hat nur die vorgesehenen Zustände und Bedienelemente", () => {
   assert.match(app, /scheduleReconnect/);
   assert.match(app, /event\.origin !== VDO_ORIGIN/);
   assert.match(app, /event\.source !== player\?\.contentWindow/);
+});
+
+test("Vollbild hat einen browserunabhängigen Rückfallmodus", () => {
+  const html = read("docs/index.html");
+  const app = read("docs/app.js");
+  const css = read("docs/styles.css");
+
+  assert.match(html, /id="exitFullscreenButton"/);
+  assert.match(app, /requestFullscreen/);
+  assert.match(app, /webkitRequestFullscreen/);
+  assert.match(app, /setFallbackFullscreen\(true\)/);
+  assert.match(app, /event\.key === "Escape"/);
+  assert.match(app, /exitFullscreenButton : elements\.fullscreenButton/);
+  assert.match(app, /FULLSCREEN_CHANGE_TIMEOUT_MS/);
+  assert.match(css, /\.player-frame\.is-window-fullscreen/);
+  assert.match(css, /body\.has-window-fullscreen/);
+  assert.match(css, /safe-area-inset-top/);
+  assert.match(css, /outline: 2px solid var\(--text\)/);
 });
 
 test("eingebetteter Player erhält keine Kamera- oder Mikrofonrechte", () => {

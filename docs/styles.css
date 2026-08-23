@@ -463,6 +463,72 @@ main {
   display: flex;
 }
 
+.exit-fullscreen-button {
+  position: absolute;
+  z-index: 10;
+  top: max(22px, calc(env(safe-area-inset-top, 0px) + 12px));
+  right: max(22px, calc(env(safe-area-inset-right, 0px) + 12px));
+  display: none;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 0 14px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 999px;
+  color: var(--text);
+  background: rgba(5, 6, 10, 0.78);
+  backdrop-filter: blur(14px);
+  font-size: 0.72rem;
+  font-weight: 750;
+  cursor: pointer;
+}
+
+.exit-fullscreen-button span:first-child {
+  color: var(--cyan);
+  font-size: 1.25rem;
+  line-height: 1;
+}
+
+.exit-fullscreen-button:hover {
+  border-color: rgba(84, 232, 208, 0.55);
+}
+
+.exit-fullscreen-button:focus-visible {
+  border-color: rgba(84, 232, 208, 0.55);
+  outline: 2px solid var(--text);
+  outline-offset: 3px;
+}
+
+.player-frame:fullscreen,
+.player-frame:-webkit-full-screen,
+.player-frame.is-window-fullscreen {
+  width: 100vw;
+  height: 100vh;
+  height: 100dvh;
+  min-height: 0;
+  border: 0;
+  border-radius: 0;
+  aspect-ratio: auto;
+  background: #000;
+}
+
+.player-frame.is-window-fullscreen {
+  position: fixed;
+  z-index: 1000;
+  inset: 0;
+}
+
+.player-frame:fullscreen .exit-fullscreen-button,
+.player-frame:-webkit-full-screen .exit-fullscreen-button,
+.player-frame.is-window-fullscreen .exit-fullscreen-button {
+  display: inline-flex;
+}
+
+body.has-window-fullscreen {
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
 .player-controls {
   display: flex;
   align-items: center;
@@ -642,6 +708,11 @@ footer p {
   .control-button { flex: 1 1 30%; justify-content: center; padding-inline: 7px; }
   .control-button span:last-child { font-size: 0.65rem; }
   .live-flag { top: 17px; left: 18px; }
+  .exit-fullscreen-button {
+    top: max(14px, calc(env(safe-area-inset-top, 0px) + 8px));
+    right: max(14px, calc(env(safe-area-inset-right, 0px) + 8px));
+  }
+  .exit-fullscreen-button span:last-child { display: none; }
 }
 
 @media (prefers-reduced-motion: reduce) {

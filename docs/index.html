@@ -24,8 +24,8 @@
       content="https://sivaslipatron.github.io/vr-live-stream/"
     />
     <title>VR Live</title>
-    <link rel="stylesheet" href="./styles.css" />
-    <script type="module" src="./app.js"></script>
+    <link rel="stylesheet" href="./styles.css?v=20260823-2" />
+    <script type="module" src="./app.js?v=20260823-2"></script>
   </head>
   <body>
     <div class="ambient ambient-one" aria-hidden="true"></div>
@@ -90,6 +90,16 @@
             <span></span>
             LIVE
           </div>
+
+          <button
+            class="exit-fullscreen-button"
+            id="exitFullscreenButton"
+            type="button"
+            aria-label="Vollbild schließen"
+          >
+            <span aria-hidden="true">×</span>
+            <span>Vollbild schließen</span>
+          </button>
         </div>
 
         <div class="player-controls" aria-label="Wiedergabesteuerung">
@@ -97,7 +107,14 @@
             <span class="control-icon" aria-hidden="true">◖</span>
             <span id="soundLabel">Ton</span>
           </button>
-          <button id="fullscreenButton" class="control-button" type="button" disabled>
+          <button
+            id="fullscreenButton"
+            class="control-button"
+            type="button"
+            aria-label="Vollbild öffnen"
+            aria-pressed="false"
+            disabled
+          >
             <span class="control-icon fullscreen-icon" aria-hidden="true">⌗</span>
             <span>Vollbild</span>
           </button>
