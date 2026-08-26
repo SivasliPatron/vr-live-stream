@@ -9,6 +9,7 @@ export function buildViewerUrl(config, mode = CONNECTION_MODE.direct) {
   url.searchParams.set("audience", config.audienceToken);
   url.searchParams.set("cleanoutput", "");
   url.searchParams.set("screensharestereo", "");
+  url.searchParams.set("mutespeaker", "1");
   url.searchParams.set("retry", "15");
   url.searchParams.set("retrytimeout", "5000");
   url.searchParams.set("autorecover", "1");

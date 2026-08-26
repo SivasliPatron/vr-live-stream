@@ -48,7 +48,7 @@ test("Viewer hat nur die vorgesehenen Zustände und Bedienelemente", () => {
   assert.match(viewerUrl, /searchParams\.set\("retry"/);
   assert.match(app, /scheduleReconnect/);
   assert.match(app, /updatePrimaryAction/);
-  assert.match(app, /Bild und Spielton im Browser starten/);
+  assert.match(app, /Bild ohne zweiten Klick starten/);
   assert.match(app, /nextState === "connecting"/);
   assert.match(app, /showRecoveringState/);
   assert.match(app, /playerSlot\.removeAttribute\("aria-live"\)/);
@@ -70,6 +70,7 @@ test("schwierige Netze erhalten automatische Wiederherstellung und Relay-Fallbac
   assert.equal(directUrl.searchParams.get("audience"), STREAM_CONFIG.audienceToken);
   assert.equal(directUrl.searchParams.get("autorecover"), "1");
   assert.equal(directUrl.searchParams.get("autorelay"), "1");
+  assert.equal(directUrl.searchParams.get("mutespeaker"), "1");
   assert.equal(directUrl.searchParams.get("p2pfailtimeout"), "12000");
   assert.equal(directUrl.searchParams.get("pendingicettl"), "20000");
   assert.equal(directUrl.searchParams.has("relay"), false);
@@ -138,6 +139,24 @@ test("eingebetteter Player erhält keine Kamera- oder Mikrofonrechte", () => {
   assert.equal(permissionLine[1], "autoplay; fullscreen");
   assert.doesNotMatch(permissionLine[1], /camera|microphone|display-capture/i);
   assert.match(app, /sandbox/);
+});
+
+test("erster Klick startet das Bild ohne Klick in den fremden Player", () => {
+  const app = read("docs/app.js");
+  const viewerUrl = new URL(buildViewerUrl(STREAM_CONFIG, CONNECTION_MODE.direct));
+  const iframeLoadHandler = app.match(
+    /player\.addEventListener\("load", \(\) => \{([\s\S]*?)\n  \}\);/,
+  );
+  const allowIndex = app.indexOf('player.allow = "autoplay; fullscreen"');
+  const srcIndex = app.indexOf("player.src = buildViewerUrl");
+
+  assert.equal(viewerUrl.searchParams.get("mutespeaker"), "1");
+  assert.match(app, /const START_MUTED = true/);
+  assert.ok(allowIndex >= 0 && allowIndex < srcIndex, "Autoplay-Freigabe muss vor src gesetzt werden");
+  assert.ok(iframeLoadHandler, "Iframe-Load-Handler fehlt");
+  assert.match(iframeLoadHandler[1], /sendToPlayer\(\{ mute: true \}\)/);
+  assert.doesNotMatch(iframeLoadHandler[1], /mute: false/);
+  assert.match(app, /sendToPlayer\(\{ mute: muted \}\)/);
 });
 
 test("nur der konfigurierte Videostream kann den Live-Zustand auslösen", () => {

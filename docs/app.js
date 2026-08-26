@@ -6,7 +6,7 @@ import {
   nextConfirmedMissingCount,
   normalizeConnectionState,
 } from "./player-health.js?v=20260824-2";
-import { buildViewerUrl, CONNECTION_MODE } from "./viewer-url.js?v=20260824-2";
+import { buildViewerUrl, CONNECTION_MODE } from "./viewer-url.js?v=20260826-3";
 import { createFullscreenTransitionGate } from "./fullscreen-transition.js?v=20260826-2";
 
 const elements = {
@@ -36,6 +36,7 @@ const MAX_CONFIRMED_MISSING_STATS = 25;
 const DISCONNECT_GRACE_MS = 90_000;
 const FULLSCREEN_CHANGE_TIMEOUT_MS = 1_200;
 const FULLSCREEN_TOGGLE_COOLDOWN_MS = 450;
+const START_MUTED = true;
 const LIVE_CONTROL_NOTE = "Direkte Zuschauer-Verbindung · keine Kamera · kein Mikrofon";
 const COMPATIBILITY_CONTROL_NOTE =
   "Kompatibilitätsverbindung über Relay · keine Kamera · kein Mikrofon";
@@ -43,7 +44,7 @@ const COMPATIBILITY_CONTROL_NOTE =
 let player = null;
 let state = "offline";
 let viewerStarted = false;
-let muted = false;
+let muted = START_MUTED;
 let connectionTimer = null;
 let disconnectTimer = null;
 let reconnectTimer = null;
@@ -103,12 +104,16 @@ function clearReconnectTimer() {
 }
 
 function updateSoundLabel() {
-  elements.soundLabel.textContent = "Ton";
+  elements.soundLabel.textContent = muted ? "Ton einschalten" : "Ton ausschalten";
   elements.soundButton.setAttribute("aria-pressed", String(!muted));
   elements.soundButton.setAttribute(
     "aria-label",
     muted ? "Ton einschalten" : "Ton ausschalten",
   );
+
+  if (state === "live") {
+    elements.controlNote.textContent = getLiveControlNote();
+  }
 }
 
 function updatePrimaryAction(label, hint) {
@@ -118,9 +123,11 @@ function updatePrimaryAction(label, hint) {
 }
 
 function getLiveControlNote() {
-  return connectionMode === CONNECTION_MODE.compatibility
+  const connectionNote = connectionMode === CONNECTION_MODE.compatibility
     ? COMPATIBILITY_CONTROL_NOTE
     : LIVE_CONTROL_NOTE;
+
+  return muted ? `${connectionNote} · Ton ist aus` : connectionNote;
 }
 
 function getNativeFullscreenElement() {
@@ -400,7 +407,9 @@ function setState(nextState) {
     : "Starte die reine Zuschauer-Verbindung, sobald der VR-Stream läuft.";
   updatePrimaryAction(
     viewerStarted ? "Jetzt neu verbinden" : "Stream ansehen",
-    viewerStarted ? "Direktverbindung neu starten" : "Bild und Spielton im Browser starten",
+    viewerStarted
+      ? "Direktverbindung neu starten"
+      : "Bild ohne zweiten Klick starten · Ton danach über den Ton-Knopf",
   );
   elements.controlNote.textContent = viewerStarted
     ? "Automatische Wiederverbindung ist aktiv"
@@ -529,6 +538,8 @@ function connect({ mode = CONNECTION_MODE.direct } = {}) {
   viewerStarted = true;
   clearReconnectTimer();
   removePlayer();
+  muted = START_MUTED;
+  updateSoundLabel();
   confirmedMissingStats = 0;
   recoveringConnection = false;
   elements.playerFrame.dataset.connectionHealth = "stable";
@@ -537,7 +548,6 @@ function connect({ mode = CONNECTION_MODE.direct } = {}) {
 
   player = document.createElement("iframe");
   player.title = "VR-Livestream";
-  player.src = buildViewerUrl(STREAM_CONFIG, connectionMode);
   player.allow = "autoplay; fullscreen";
   player.referrerPolicy = "no-referrer";
   player.setAttribute("allowfullscreen", "");
@@ -547,11 +557,12 @@ function connect({ mode = CONNECTION_MODE.direct } = {}) {
   );
 
   player.addEventListener("load", () => {
-    sendToPlayer({ mute: muted });
+    sendToPlayer({ mute: true });
     sendToPlayer({ volume: 1 });
     requestStats();
   });
 
+  player.src = buildViewerUrl(STREAM_CONFIG, connectionMode);
   elements.playerSlot.append(player);
 
   statsTimer = window.setInterval(requestStats, STATS_INTERVAL_MS);
@@ -637,6 +648,7 @@ elements.reconnectButton.addEventListener("click", () => {
 elements.soundButton.addEventListener("click", () => {
   muted = !muted;
   sendToPlayer({ mute: muted });
+  sendToPlayer({ volume: 1 });
   updateSoundLabel();
 });
 
@@ -678,4 +690,5 @@ window.addEventListener("beforeunload", () => {
   removePlayer();
 });
 
+updateSoundLabel();
 setState("offline");
