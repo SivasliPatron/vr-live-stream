@@ -71,9 +71,13 @@ test("schwierige Netze erhalten automatische Wiederherstellung und Relay-Fallbac
   assert.equal(directUrl.searchParams.get("autorecover"), "1");
   assert.equal(directUrl.searchParams.get("autorelay"), "1");
   assert.equal(directUrl.searchParams.get("mutespeaker"), "1");
+  assert.equal(directUrl.searchParams.get("screensharebitrate"), "6000");
+  assert.equal(directUrl.searchParams.get("buffer"), "200");
   assert.equal(directUrl.searchParams.get("p2pfailtimeout"), "12000");
   assert.equal(directUrl.searchParams.get("pendingicettl"), "20000");
   assert.equal(directUrl.searchParams.has("relay"), false);
+  assert.equal(compatibilityUrl.searchParams.get("screensharebitrate"), "6000");
+  assert.equal(compatibilityUrl.searchParams.get("buffer"), "200");
   assert.equal(compatibilityUrl.searchParams.has("relay"), true);
   assert.ok(STREAM_CONFIG.connectTimeoutMs >= 60_000);
   assert.match(app, /MAX_CONFIRMED_MISSING_STATS = 25/);

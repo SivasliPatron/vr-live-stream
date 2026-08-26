@@ -6,7 +6,7 @@ import {
   nextConfirmedMissingCount,
   normalizeConnectionState,
 } from "./player-health.js?v=20260824-2";
-import { buildViewerUrl, CONNECTION_MODE } from "./viewer-url.js?v=20260826-3";
+import { buildViewerUrl, CONNECTION_MODE } from "./viewer-url.js?v=20260826-4";
 import { createFullscreenTransitionGate } from "./fullscreen-transition.js?v=20260826-2";
 
 const elements = {

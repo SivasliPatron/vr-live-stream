@@ -12,6 +12,8 @@ Meta Quest → Meta-Casting im Chrome-Tab → VDO.Ninja → GitHub-Zuschauer-Sei
 
 GitHub Pages liefert nur die Website aus. Bild und Spielton werden von VDO.Ninja als direkte WebRTC-Verbindung übertragen.
 
+Die Zuschauer-Verbindung fordert 6.000 kbit/s für den bewegungsreichen 720p/60-Stream an und nutzt in unterstützten Browsern einen kleinen 200-ms-Wiedergabepuffer. Dadurch werden kurze Netzwerkschwankungen geglättet, ohne Auflösung oder Bildrate absichtlich zu reduzieren.
+
 ## Stream starten
 
 Die Sender-Verknüpfungen liegen nur lokal im ignorierten Ordner `.private` und werden niemals zu GitHub übertragen.
@@ -42,7 +44,8 @@ Die Seite fordert keine Kamera- oder Mikrofonberechtigung an und enthält weder 
 1. Auf dem Sender-PC alle alten VDO.Ninja-Sender-Tabs schließen und den Stream erneut mit `02 VR-Stream 720p60 (Chrome).lnk` starten.
 2. Der betroffene Zuschauer schließt alle alten VR-Live-Tabs und öffnet den GitHub-Link neu. Nach einer Aktualisierung hilft am PC zusätzlich `Strg+F5`, am Handy ein privater Tab.
 3. **Stream ansehen** anklicken und bis zu 65 Sekunden warten. Scheitert der Direktweg, probiert die Seite automatisch die Relay-Kompatibilitätsverbindung.
-4. Den Link möglichst direkt in Chrome, Firefox, Edge oder Safari öffnen, nicht im eingebauten Browser einer Messenger-App.
+4. Den Link möglichst direkt in Chrome oder Edge öffnen, nicht im eingebauten Browser einer Messenger-App. Firefox und Safari funktionieren grundsätzlich, unterstützen den zusätzlichen VDO-Wiedergabepuffer aber nicht in jedem Fall.
+5. Für die stabilste 720p/60-Übertragung den Sender-PC möglichst per LAN-Kabel verbinden und parallele Uploads, Cloud-Sicherungen oder VPN-Verbindungen während des Streams pausieren.
 
 ## Sicherheit und Grenzen
 
@@ -51,6 +54,7 @@ Die Seite fordert keine Kamera- oder Mikrofonberechtigung an und enthält weder 
 - VDO.Ninja arbeitet überwiegend Peer-to-Peer. Dadurch können die öffentlichen IP-Adressen der beteiligten Geräte technisch sichtbar sein.
 - Die frühere Drei-Zuschauer-Sperre wurde auf sechs gleichzeitige Verbindungsslots angehoben. Das gibt den vorgesehenen 1–3 Zuschauern Reserve für Wiederverbindungen, ohne den Sender unbegrenzt zu belasten.
 - Bei schwierigen WLAN-, Mobilfunk- oder Firewall-Netzen versucht die Zuschauer-Seite nach dem Direktweg automatisch eine Relay-Kompatibilitätsverbindung.
+- Drei Zuschauer können zusammen rund 18 Mbit/s Video-Upload plus Reserve benötigen. Für volle 720p/60-Qualität sollte der Sender-PC deshalb stabil etwa 25 Mbit/s Upload erreichen.
 - Es gibt in V1 keine Aufnahme, Anmeldung, Zuschauerverwaltung oder eigene Domain.
 
 ## Lokale Prüfung
