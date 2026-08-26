@@ -13,6 +13,7 @@ import {
 } from "../docs/player-health.js";
 import { STREAM_CONFIG } from "../docs/stream-config.js";
 import { buildViewerUrl, CONNECTION_MODE } from "../docs/viewer-url.js";
+import { createFullscreenTransitionGate } from "../docs/fullscreen-transition.js";
 
 const root = resolve(import.meta.dirname, "..");
 const read = (path) => readFileSync(resolve(root, path), "utf8");
@@ -21,6 +22,7 @@ test("GitHub-Pages-Dateien und Unterpfade sind vollständig", () => {
   const html = read("docs/index.html");
 
   assert.equal(existsSync(resolve(root, "docs/.nojekyll")), true);
+  assert.equal(existsSync(resolve(root, "docs/fullscreen-transition.js")), true);
   assert.equal(existsSync(resolve(root, "docs/viewer-url.js")), true);
   assert.match(html, /href="\.\/styles\.css\?v=[^"]+"/);
   assert.match(html, /src="\.\/app\.js\?v=[^"]+"/);
@@ -32,6 +34,7 @@ test("GitHub-Pages-Dateien und Unterpfade sind vollständig", () => {
 test("Viewer hat nur die vorgesehenen Zustände und Bedienelemente", () => {
   const html = read("docs/index.html");
   const app = read("docs/app.js");
+  const css = read("docs/styles.css");
   const viewerUrl = read("docs/viewer-url.js");
 
   for (const label of ["OFFLINE", "VERBINDEN", "LIVE", "Neu verbinden", "Vollbild"]) {
@@ -44,6 +47,14 @@ test("Viewer hat nur die vorgesehenen Zustände und Bedienelemente", () => {
   assert.match(viewerUrl, /searchParams\.set\("screensharestereo"/);
   assert.match(viewerUrl, /searchParams\.set\("retry"/);
   assert.match(app, /scheduleReconnect/);
+  assert.match(app, /updatePrimaryAction/);
+  assert.match(app, /Bild und Spielton im Browser starten/);
+  assert.match(app, /nextState === "connecting"/);
+  assert.match(app, /showRecoveringState/);
+  assert.match(app, /playerSlot\.removeAttribute\("aria-live"\)/);
+  assert.match(app, /placeholderText\.setAttribute\("aria-live", "polite"\)/);
+  assert.match(css, /content: attr\(data-hint\)/);
+  assert.match(css, /data-player-state="connecting"/);
   assert.match(app, /event\.origin !== VDO_ORIGIN/);
   assert.match(app, /event\.source !== player\?\.contentWindow/);
 });
@@ -77,14 +88,46 @@ test("Vollbild hat einen browserunabhängigen Rückfallmodus", () => {
   assert.match(html, /id="exitFullscreenButton"/);
   assert.match(app, /requestFullscreen/);
   assert.match(app, /webkitRequestFullscreen/);
-  assert.match(app, /setFallbackFullscreen\(true\)/);
+  assert.match(app, /navigationUI: "hide"/);
+  assert.match(app, /setFallbackFullscreen\(true/);
+  assert.match(app, /fullscreenTransition\.tryStart/);
+  assert.match(app, /bypassCooldown/);
+  assert.match(app, /screen\.orientation\.lock/);
   assert.match(app, /event\.key === "Escape"/);
   assert.match(app, /exitFullscreenButton : elements\.fullscreenButton/);
   assert.match(app, /FULLSCREEN_CHANGE_TIMEOUT_MS/);
   assert.match(css, /\.player-frame\.is-window-fullscreen/);
+  assert.match(css, /html\.has-window-fullscreen/);
   assert.match(css, /body\.has-window-fullscreen/);
+  assert.match(css, /@keyframes action-spin/);
   assert.match(css, /safe-area-inset-top/);
   assert.match(css, /outline: 2px solid var\(--text\)/);
+});
+
+test("Vollbild-Übergänge sind gegen Doppelklick und parallele Aufrufe geschützt", () => {
+  let currentTime = 1_000;
+  const gate = createFullscreenTransitionGate({
+    cooldownMs: 450,
+    now: () => currentTime,
+  });
+
+  assert.equal(gate.tryStart(), true);
+  assert.equal(gate.isPending(), true);
+  assert.equal(gate.tryStart(), false, "paralleler Aufruf muss blockiert werden");
+  gate.finish();
+  assert.equal(gate.isPending(), false);
+  assert.equal(gate.tryStart(), false, "Doppelklick innerhalb der Abklingzeit");
+
+  currentTime += 451;
+  assert.equal(gate.tryStart(), true);
+  gate.finish();
+  assert.equal(gate.tryStart({ bypassCooldown: true }), true);
+  assert.equal(
+    gate.tryStart({ bypassCooldown: true }),
+    false,
+    "auch ein direkter Exit darf nicht parallel laufen",
+  );
+  gate.finish();
 });
 
 test("eingebetteter Player erhält keine Kamera- oder Mikrofonrechte", () => {
