@@ -6,7 +6,7 @@ import {
   nextConfirmedMissingCount,
   normalizeConnectionState,
 } from "./player-health.js?v=20260824-2";
-import { buildViewerUrl, CONNECTION_MODE } from "./viewer-url.js?v=20260826-4";
+import { buildViewerUrl, CONNECTION_MODE } from "./viewer-url.js?v=20260827-1";
 import { createFullscreenTransitionGate } from "./fullscreen-transition.js?v=20260826-2";
 
 const elements = {
@@ -18,6 +18,10 @@ const elements = {
   placeholderKicker: document.querySelector("#placeholderKicker"),
   placeholderTitle: document.querySelector("#placeholderTitle"),
   placeholderText: document.querySelector("#placeholderText"),
+  accessForm: document.querySelector("#accessForm"),
+  viewerNameInput: document.querySelector("#viewerNameInput"),
+  accessCodeInput: document.querySelector("#accessCodeInput"),
+  accessError: document.querySelector("#accessError"),
   primaryAction: document.querySelector("#primaryAction"),
   primaryActionLabel: document.querySelector("#primaryActionLabel"),
   soundButton: document.querySelector("#soundButton"),
@@ -54,6 +58,8 @@ let fallbackFullscreen = false;
 let fullscreenWasActive = false;
 let connectionMode = CONNECTION_MODE.direct;
 let recoveringConnection = false;
+let viewerName = "";
+let accessCode = "";
 
 const fullscreenTransition = createFullscreenTransitionGate({
   cooldownMs: FULLSCREEN_TOGGLE_COOLDOWN_MS,
@@ -65,6 +71,68 @@ function hasUsableValue(value) {
     value.length >= 8 &&
     !value.startsWith("PENDING_")
   );
+}
+
+function normalizeViewerName(value) {
+  return value.trim().replace(/\s+/g, " ").slice(0, 32);
+}
+
+function hasViewerCredentials() {
+  return viewerName.length >= 2 && /^[0-9]{4}$/.test(accessCode);
+}
+
+function setAccessError(message = "", field = null) {
+  elements.accessError.textContent = message;
+  elements.accessError.hidden = !message;
+  elements.viewerNameInput.setAttribute(
+    "aria-invalid",
+    String(Boolean(message) && field === "name"),
+  );
+  elements.accessCodeInput.setAttribute(
+    "aria-invalid",
+    String(Boolean(message) && field === "code"),
+  );
+}
+
+function applyViewerCredentialsFromInputs() {
+  const nextViewerName = normalizeViewerName(elements.viewerNameInput.value);
+  const nextAccessCode = elements.accessCodeInput.value.trim();
+
+  if (nextViewerName.length < 2) {
+    setAccessError("Bitte einen Namen mit mindestens zwei Zeichen eingeben.", "name");
+    elements.viewerNameInput.focus({ preventScroll: true });
+    return false;
+  }
+
+  if (!/^[0-9]{4}$/.test(nextAccessCode)) {
+    setAccessError("Der Zugangscode muss genau vier Ziffern haben.", "code");
+    elements.accessCodeInput.focus({ preventScroll: true });
+    elements.accessCodeInput.select();
+    return false;
+  }
+
+  viewerName = nextViewerName;
+  accessCode = nextAccessCode;
+  elements.viewerNameInput.value = viewerName;
+  setAccessError();
+  return true;
+}
+
+function handleCredentialEdit() {
+  viewerName = normalizeViewerName(elements.viewerNameInput.value);
+  accessCode = elements.accessCodeInput.value.trim();
+  viewerStarted = false;
+  connectionMode = CONNECTION_MODE.direct;
+  clearReconnectTimer();
+  setAccessError();
+
+  if (state === "connecting") {
+    removePlayer();
+  }
+
+  if (state !== "live") {
+    setState("offline");
+  }
 }
 
 const isConfigured =
@@ -348,8 +416,12 @@ function setState(nextState) {
   elements.statusPill.dataset.state = nextState;
   elements.playerFrame.dataset.playerState = nextState;
   elements.playerFrame.setAttribute("aria-busy", String(nextState === "connecting"));
+  elements.accessForm.setAttribute("aria-busy", String(nextState === "connecting"));
 
   const live = nextState === "live";
+  const accessInputsEnabled = nextState !== "live" && isConfigured && navigator.onLine;
+  elements.viewerNameInput.disabled = !accessInputsEnabled;
+  elements.accessCodeInput.disabled = !accessInputsEnabled;
   elements.soundButton.disabled = !live;
   elements.reconnectButton.disabled = !isConfigured || nextState === "connecting";
   syncFullscreenUi({ moveFocus: false });
@@ -403,13 +475,13 @@ function setState(nextState) {
     ? "Der Stream ist gerade nicht erreichbar."
     : "Bereit zum Zuschauen.";
   elements.placeholderText.textContent = viewerStarted
-    ? "Die Seite versucht es automatisch erneut. Du kannst auch sofort neu verbinden."
-    : "Starte die reine Zuschauer-Verbindung, sobald der VR-Stream läuft.";
+    ? "Die Seite versucht es automatisch erneut. Prüfe bei Bedarf den aktuellen Zugangscode."
+    : "Gib deinen Namen und den aktuellen vierstelligen Zugangscode ein.";
   updatePrimaryAction(
     viewerStarted ? "Jetzt neu verbinden" : "Stream ansehen",
     viewerStarted
       ? "Direktverbindung neu starten"
-      : "Bild ohne zweiten Klick starten · Ton danach über den Ton-Knopf",
+      : "Name und vierstelligen Code eingeben",
   );
   elements.controlNote.textContent = viewerStarted
     ? "Automatische Wiederverbindung ist aktiv"
@@ -446,7 +518,13 @@ function removePlayer() {
 function scheduleReconnect() {
   clearReconnectTimer();
 
-  if (!viewerStarted || !navigator.onLine || document.hidden || !isConfigured) {
+  if (
+    !viewerStarted ||
+    !hasViewerCredentials() ||
+    !navigator.onLine ||
+    document.hidden ||
+    !isConfigured
+  ) {
     return;
   }
 
@@ -482,6 +560,7 @@ function markLive() {
   disconnectTimer = null;
   confirmedMissingStats = 0;
   recoveringConnection = false;
+  setAccessError();
   elements.playerFrame.dataset.connectionHealth = "stable";
   if (becameLive || recovered) {
     setState("live");
@@ -527,6 +606,19 @@ function connect({ mode = CONNECTION_MODE.direct } = {}) {
     return;
   }
 
+  if (!hasViewerCredentials()) {
+    setState("offline");
+    if (viewerName.length < 2) {
+      setAccessError("Bitte einen Namen mit mindestens zwei Zeichen eingeben.", "name");
+      elements.viewerNameInput.focus({ preventScroll: true });
+    } else {
+      setAccessError("Der Zugangscode muss genau vier Ziffern haben.", "code");
+      elements.accessCodeInput.focus({ preventScroll: true });
+      elements.accessCodeInput.select();
+    }
+    return;
+  }
+
   if (!navigator.onLine) {
     viewerStarted = true;
     clearReconnectTimer();
@@ -544,6 +636,7 @@ function connect({ mode = CONNECTION_MODE.direct } = {}) {
   recoveringConnection = false;
   elements.playerFrame.dataset.connectionHealth = "stable";
   connectionMode = mode;
+  setAccessError();
   setState("connecting");
 
   player = document.createElement("iframe");
@@ -562,7 +655,10 @@ function connect({ mode = CONNECTION_MODE.direct } = {}) {
     requestStats();
   });
 
-  player.src = buildViewerUrl(STREAM_CONFIG, connectionMode);
+  player.src = buildViewerUrl(STREAM_CONFIG, connectionMode, {
+    accessCode,
+    viewerName,
+  });
   elements.playerSlot.append(player);
 
   statsTimer = window.setInterval(requestStats, STATS_INTERVAL_MS);
@@ -638,10 +734,32 @@ window.addEventListener("message", (event) => {
   }
 });
 
-elements.primaryAction.addEventListener("click", () => {
+elements.accessForm.addEventListener("submit", (event) => {
+  event.preventDefault();
+
+  if (!applyViewerCredentialsFromInputs()) {
+    return;
+  }
+
   connect({ mode: CONNECTION_MODE.direct });
 });
+
+elements.viewerNameInput.addEventListener("input", () => {
+  handleCredentialEdit();
+});
+
+elements.accessCodeInput.addEventListener("input", () => {
+  elements.accessCodeInput.value = elements.accessCodeInput.value
+    .replace(/[^0-9]/g, "")
+    .slice(0, 4);
+  handleCredentialEdit();
+});
+
 elements.reconnectButton.addEventListener("click", () => {
+  if (!applyViewerCredentialsFromInputs()) {
+    return;
+  }
+
   connect({ mode: CONNECTION_MODE.direct });
 });
 

@@ -6,7 +6,11 @@ export const CONNECTION_MODE = Object.freeze({
 const SCREENSHARE_BITRATE_KBPS = "6000";
 const PLAYOUT_BUFFER_MS = "200";
 
-export function buildViewerUrl(config, mode = CONNECTION_MODE.direct) {
+export function buildViewerUrl(
+  config,
+  mode = CONNECTION_MODE.direct,
+  { accessCode = "", viewerName = "" } = {},
+) {
   const url = new URL(config.viewerBaseUrl);
   url.searchParams.set("view", config.streamId);
   url.searchParams.set("audience", config.audienceToken);
@@ -22,8 +26,23 @@ export function buildViewerUrl(config, mode = CONNECTION_MODE.direct) {
   url.searchParams.set("p2pfailtimeout", "12000");
   url.searchParams.set("pendingicettl", "20000");
 
+  const normalizedViewerName = viewerName.trim().replace(/\s+/g, " ").slice(0, 32);
+  const fragment = new URLSearchParams();
+  if (normalizedViewerName) {
+    fragment.set("label", normalizedViewerName);
+  }
+
   if (mode === CONNECTION_MODE.compatibility) {
     url.searchParams.set("relay", "");
+  }
+
+  if (/^[0-9]{4}$/.test(accessCode)) {
+    fragment.set("password", accessCode);
+  }
+
+  const fragmentValue = fragment.toString();
+  if (fragmentValue) {
+    url.hash = fragmentValue;
   }
 
   return url.toString();

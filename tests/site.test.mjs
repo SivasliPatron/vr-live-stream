@@ -48,7 +48,8 @@ test("Viewer hat nur die vorgesehenen Zustände und Bedienelemente", () => {
   assert.match(viewerUrl, /searchParams\.set\("retry"/);
   assert.match(app, /scheduleReconnect/);
   assert.match(app, /updatePrimaryAction/);
-  assert.match(app, /Bild ohne zweiten Klick starten/);
+  assert.match(app, /vierstelligen Zugangscode/);
+  assert.match(app, /accessForm\.addEventListener\("submit"/);
   assert.match(app, /nextState === "connecting"/);
   assert.match(app, /showRecoveringState/);
   assert.match(app, /playerSlot\.removeAttribute\("aria-live"\)/);
@@ -57,6 +58,39 @@ test("Viewer hat nur die vorgesehenen Zustände und Bedienelemente", () => {
   assert.match(css, /data-player-state="connecting"/);
   assert.match(app, /event\.origin !== VDO_ORIGIN/);
   assert.match(app, /event\.source !== player\?\.contentWindow/);
+});
+
+test("Zuschauer benötigen Name und einen vierstelligen VDO-Zugangscode", () => {
+  const html = read("docs/index.html");
+  const app = read("docs/app.js");
+  const protectedUrl = new URL(
+    buildViewerUrl(STREAM_CONFIG, CONNECTION_MODE.direct, {
+      accessCode: "0427",
+      viewerName: "  Test   Zuschauer  ",
+    }),
+  );
+  const invalidCodeUrl = new URL(
+    buildViewerUrl(STREAM_CONFIG, CONNECTION_MODE.direct, {
+      accessCode: "123",
+      viewerName: "Test Zuschauer",
+    }),
+  );
+  const fragment = new URLSearchParams(protectedUrl.hash.slice(1));
+  const invalidCodeFragment = new URLSearchParams(invalidCodeUrl.hash.slice(1));
+
+  assert.match(html, /id="viewerNameInput"/);
+  assert.match(html, /id="accessCodeInput"/);
+  assert.match(html, /inputmode="numeric"/);
+  assert.match(html, /pattern="\[0-9\]\{4\}"/);
+  assert.match(app, /replace\(\/\[\^0-9\]\/g, ""\)/);
+  assert.equal(protectedUrl.searchParams.has("label"), false);
+  assert.equal(protectedUrl.searchParams.has("password"), false);
+  assert.equal(fragment.get("label"), "Test Zuschauer");
+  assert.equal(fragment.get("password"), "0427");
+  assert.equal(invalidCodeFragment.get("label"), "Test Zuschauer");
+  assert.equal(invalidCodeFragment.has("password"), false);
+  assert.match(app, /function handleCredentialEdit/);
+  assert.match(app, /nextState !== "live"/);
 });
 
 test("schwierige Netze erhalten automatische Wiederherstellung und Relay-Fallback", () => {
@@ -245,10 +279,11 @@ test("öffentliche Stream-Konfiguration ist vollständig", () => {
 
   assert.doesNotMatch(config, /PENDING_STREAM_ID/);
   assert.doesNotMatch(config, /PENDING_AUDIENCE_TOKEN/);
+  assert.doesNotMatch(config, /accessCode|password/i);
   assert.match(config, /viewerBaseUrl: "https:\/\/vdo\.ninja\/"/);
 });
 
-test("keine Sender-URL und kein Publisher-Token können committed werden", () => {
+test("keine Sender-URL, Publisher-Tokens oder Sitzungscodes können committed werden", () => {
   const listed = execFileSync(
     "git",
     ["ls-files", "--cached", "--others", "--exclude-standard", "-z"],
@@ -261,15 +296,24 @@ test("keine Sender-URL und kein Publisher-Token können committed werden", () =>
   assert.equal(listed.some((path) => path.startsWith(".private/")), false);
 
   const publisherSecretPath = resolve(root, ".private/stream-secrets.json");
-  const publisherToken = existsSync(publisherSecretPath)
-    ? JSON.parse(readFileSync(publisherSecretPath, "utf8")).publisherToken
-    : null;
+  const publisherSecrets = existsSync(publisherSecretPath)
+    ? JSON.parse(readFileSync(publisherSecretPath, "utf8"))
+    : {};
+  const publisherToken = publisherSecrets.publisherToken ?? null;
+  const accessCode = publisherSecrets.accessCode ?? null;
 
   for (const relativePath of listed) {
     const body = readFileSync(resolve(root, relativePath), "utf8");
     assert.doesNotMatch(body, /[?&]push(?:=|%3d)/i, `${relativePath} enthält eine Sender-URL`);
     if (publisherToken) {
       assert.equal(body.includes(publisherToken), false, `${relativePath} enthält den Publisher-Token`);
+    }
+    if (accessCode) {
+      assert.equal(
+        body.includes(`password=${accessCode}`),
+        false,
+        `${relativePath} enthält den aktuellen Zugangscode`,
+      );
     }
   }
 });
