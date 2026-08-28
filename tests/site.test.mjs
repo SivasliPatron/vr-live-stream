@@ -60,34 +60,35 @@ test("Viewer hat nur die vorgesehenen Zustände und Bedienelemente", () => {
   assert.match(app, /event\.source !== player\?\.contentWindow/);
 });
 
-test("Zuschauer benötigen Name und einen vierstelligen VDO-Zugangscode", () => {
+test("Zuschauer benötigen nur einen vierstelligen VDO-Zugangscode", () => {
   const html = read("docs/index.html");
   const app = read("docs/app.js");
+  const viewerUrl = read("docs/viewer-url.js");
   const protectedUrl = new URL(
     buildViewerUrl(STREAM_CONFIG, CONNECTION_MODE.direct, {
       accessCode: "0427",
-      viewerName: "  Test   Zuschauer  ",
     }),
   );
   const invalidCodeUrl = new URL(
     buildViewerUrl(STREAM_CONFIG, CONNECTION_MODE.direct, {
       accessCode: "123",
-      viewerName: "Test Zuschauer",
     }),
   );
   const fragment = new URLSearchParams(protectedUrl.hash.slice(1));
   const invalidCodeFragment = new URLSearchParams(invalidCodeUrl.hash.slice(1));
 
-  assert.match(html, /id="viewerNameInput"/);
+  assert.doesNotMatch(html, /id="viewerNameInput"/);
+  assert.doesNotMatch(app, /viewerName/);
+  assert.doesNotMatch(viewerUrl, /fragment\.set\("label"/);
   assert.match(html, /id="accessCodeInput"/);
   assert.match(html, /inputmode="numeric"/);
   assert.match(html, /pattern="\[0-9\]\{4\}"/);
   assert.match(app, /replace\(\/\[\^0-9\]\/g, ""\)/);
   assert.equal(protectedUrl.searchParams.has("label"), false);
   assert.equal(protectedUrl.searchParams.has("password"), false);
-  assert.equal(fragment.get("label"), "Test Zuschauer");
+  assert.equal(fragment.has("label"), false);
   assert.equal(fragment.get("password"), "0427");
-  assert.equal(invalidCodeFragment.get("label"), "Test Zuschauer");
+  assert.equal(invalidCodeFragment.has("label"), false);
   assert.equal(invalidCodeFragment.has("password"), false);
   assert.match(app, /function handleCredentialEdit/);
   assert.match(app, /nextState !== "live"/);

@@ -411,7 +411,8 @@ main {
 
 .access-fields {
   display: grid;
-  grid-template-columns: minmax(0, 1.45fr) minmax(125px, 0.8fr);
+  grid-template-columns: minmax(160px, 240px);
+  justify-content: center;
   width: 100%;
   gap: 12px;
   transition: opacity 180ms ease;

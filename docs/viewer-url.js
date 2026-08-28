@@ -9,7 +9,7 @@ const PLAYOUT_BUFFER_MS = "200";
 export function buildViewerUrl(
   config,
   mode = CONNECTION_MODE.direct,
-  { accessCode = "", viewerName = "" } = {},
+  { accessCode = "" } = {},
 ) {
   const url = new URL(config.viewerBaseUrl);
   url.searchParams.set("view", config.streamId);
@@ -26,11 +26,7 @@ export function buildViewerUrl(
   url.searchParams.set("p2pfailtimeout", "12000");
   url.searchParams.set("pendingicettl", "20000");
 
-  const normalizedViewerName = viewerName.trim().replace(/\s+/g, " ").slice(0, 32);
   const fragment = new URLSearchParams();
-  if (normalizedViewerName) {
-    fragment.set("label", normalizedViewerName);
-  }
 
   if (mode === CONNECTION_MODE.compatibility) {
     url.searchParams.set("relay", "");

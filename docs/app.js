@@ -6,7 +6,7 @@ import {
   nextConfirmedMissingCount,
   normalizeConnectionState,
 } from "./player-health.js?v=20260824-2";
-import { buildViewerUrl, CONNECTION_MODE } from "./viewer-url.js?v=20260827-1";
+import { buildViewerUrl, CONNECTION_MODE } from "./viewer-url.js?v=20260828-1";
 import { createFullscreenTransitionGate } from "./fullscreen-transition.js?v=20260826-2";
 
 const elements = {
@@ -19,7 +19,6 @@ const elements = {
   placeholderTitle: document.querySelector("#placeholderTitle"),
   placeholderText: document.querySelector("#placeholderText"),
   accessForm: document.querySelector("#accessForm"),
-  viewerNameInput: document.querySelector("#viewerNameInput"),
   accessCodeInput: document.querySelector("#accessCodeInput"),
   accessError: document.querySelector("#accessError"),
   primaryAction: document.querySelector("#primaryAction"),
@@ -58,7 +57,6 @@ let fallbackFullscreen = false;
 let fullscreenWasActive = false;
 let connectionMode = CONNECTION_MODE.direct;
 let recoveringConnection = false;
-let viewerName = "";
 let accessCode = "";
 
 const fullscreenTransition = createFullscreenTransitionGate({
@@ -73,53 +71,32 @@ function hasUsableValue(value) {
   );
 }
 
-function normalizeViewerName(value) {
-  return value.trim().replace(/\s+/g, " ").slice(0, 32);
-}
-
 function hasViewerCredentials() {
-  return viewerName.length >= 2 && /^[0-9]{4}$/.test(accessCode);
+  return /^[0-9]{4}$/.test(accessCode);
 }
 
-function setAccessError(message = "", field = null) {
+function setAccessError(message = "") {
   elements.accessError.textContent = message;
   elements.accessError.hidden = !message;
-  elements.viewerNameInput.setAttribute(
-    "aria-invalid",
-    String(Boolean(message) && field === "name"),
-  );
-  elements.accessCodeInput.setAttribute(
-    "aria-invalid",
-    String(Boolean(message) && field === "code"),
-  );
+  elements.accessCodeInput.setAttribute("aria-invalid", String(Boolean(message)));
 }
 
 function applyViewerCredentialsFromInputs() {
-  const nextViewerName = normalizeViewerName(elements.viewerNameInput.value);
   const nextAccessCode = elements.accessCodeInput.value.trim();
 
-  if (nextViewerName.length < 2) {
-    setAccessError("Bitte einen Namen mit mindestens zwei Zeichen eingeben.", "name");
-    elements.viewerNameInput.focus({ preventScroll: true });
-    return false;
-  }
-
   if (!/^[0-9]{4}$/.test(nextAccessCode)) {
-    setAccessError("Der Zugangscode muss genau vier Ziffern haben.", "code");
+    setAccessError("Der Zugangscode muss genau vier Ziffern haben.");
     elements.accessCodeInput.focus({ preventScroll: true });
     elements.accessCodeInput.select();
     return false;
   }
 
-  viewerName = nextViewerName;
   accessCode = nextAccessCode;
-  elements.viewerNameInput.value = viewerName;
   setAccessError();
   return true;
 }
 
 function handleCredentialEdit() {
-  viewerName = normalizeViewerName(elements.viewerNameInput.value);
   accessCode = elements.accessCodeInput.value.trim();
   viewerStarted = false;
   connectionMode = CONNECTION_MODE.direct;
@@ -420,7 +397,6 @@ function setState(nextState) {
 
   const live = nextState === "live";
   const accessInputsEnabled = nextState !== "live" && isConfigured && navigator.onLine;
-  elements.viewerNameInput.disabled = !accessInputsEnabled;
   elements.accessCodeInput.disabled = !accessInputsEnabled;
   elements.soundButton.disabled = !live;
   elements.reconnectButton.disabled = !isConfigured || nextState === "connecting";
@@ -476,12 +452,12 @@ function setState(nextState) {
     : "Bereit zum Zuschauen.";
   elements.placeholderText.textContent = viewerStarted
     ? "Die Seite versucht es automatisch erneut. Prüfe bei Bedarf den aktuellen Zugangscode."
-    : "Gib deinen Namen und den aktuellen vierstelligen Zugangscode ein.";
+    : "Gib den aktuellen vierstelligen Zugangscode ein.";
   updatePrimaryAction(
     viewerStarted ? "Jetzt neu verbinden" : "Stream ansehen",
     viewerStarted
       ? "Direktverbindung neu starten"
-      : "Name und vierstelligen Code eingeben",
+      : "Vierstelligen Code eingeben",
   );
   elements.controlNote.textContent = viewerStarted
     ? "Automatische Wiederverbindung ist aktiv"
@@ -608,14 +584,9 @@ function connect({ mode = CONNECTION_MODE.direct } = {}) {
 
   if (!hasViewerCredentials()) {
     setState("offline");
-    if (viewerName.length < 2) {
-      setAccessError("Bitte einen Namen mit mindestens zwei Zeichen eingeben.", "name");
-      elements.viewerNameInput.focus({ preventScroll: true });
-    } else {
-      setAccessError("Der Zugangscode muss genau vier Ziffern haben.", "code");
-      elements.accessCodeInput.focus({ preventScroll: true });
-      elements.accessCodeInput.select();
-    }
+    setAccessError("Der Zugangscode muss genau vier Ziffern haben.");
+    elements.accessCodeInput.focus({ preventScroll: true });
+    elements.accessCodeInput.select();
     return;
   }
 
@@ -657,7 +628,6 @@ function connect({ mode = CONNECTION_MODE.direct } = {}) {
 
   player.src = buildViewerUrl(STREAM_CONFIG, connectionMode, {
     accessCode,
-    viewerName,
   });
   elements.playerSlot.append(player);
 
@@ -742,10 +712,6 @@ elements.accessForm.addEventListener("submit", (event) => {
   }
 
   connect({ mode: CONNECTION_MODE.direct });
-});
-
-elements.viewerNameInput.addEventListener("input", () => {
-  handleCredentialEdit();
 });
 
 elements.accessCodeInput.addEventListener("input", () => {
