@@ -247,7 +247,7 @@ main {
   letter-spacing: 0.1em;
 }
 
-.quality-badge i {
+.quality-badge > [aria-hidden] {
   width: 3px;
   height: 3px;
   border-radius: 50%;

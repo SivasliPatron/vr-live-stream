@@ -18,7 +18,7 @@ Die Zuschauer-Verbindung fordert 6.000 kbit/s für den bewegungsreichen 720p/60-
 
 ## Stream starten
 
-Die Sender-Verknüpfungen liegen nur lokal im ignorierten Ordner `.private` und werden niemals zu GitHub übertragen.
+Der lokale Projektordner heißt **VR Live** und liegt auf dem Desktop. Die Startverknüpfungen sind direkt in diesem Ordner sichtbar. Die dazugehörigen Senderdaten bleiben im ignorierten Unterordner `.private`; lokale Verknüpfungen und Senderdaten werden nicht zu GitHub übertragen.
 
 1. `01 Meta-Casting (Chrome).lnk` öffnen und bei Meta anmelden.
 2. In der Quest **Kamera → Casten → Computer** auswählen.

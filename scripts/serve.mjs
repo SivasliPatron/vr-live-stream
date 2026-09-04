@@ -23,6 +23,12 @@ const server = createServer((request, response) => {
     return;
   }
 
+  if (pathname === basePath) {
+    response.writeHead(302, { location: `${basePath}/` });
+    response.end();
+    return;
+  }
+
   if (!pathname.startsWith(`${basePath}/`)) {
     response.writeHead(404).end("Not found");
     return;

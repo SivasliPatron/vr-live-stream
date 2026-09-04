@@ -1,4 +1,4 @@
-import { STREAM_CONFIG } from "./stream-config.js?v=20260824-2";
+import { STREAM_CONFIG } from "./stream-config.js?v=20260904-1";
 import {
   getHealthStatsStatus,
   isSameStreamId,
