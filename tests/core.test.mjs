@@ -66,6 +66,16 @@ test("Sender URLs: 720p60 / 30 use same identity, PIN and transport",()=>{
     assert.equal(url.hash,"#password=0042");
   }
 });
+test("Native video controls change only the viewer presentation",()=>{
+  const normal = new URL(streamUrl(identity,"0042"));
+  const safari = new URL(streamUrl(identity,"0042",{nativeControls:true}));
+  assert.equal(safari.searchParams.has("videocontrols"),true);
+  assert.equal(safari.searchParams.has("cleanoutput"),true);
+  assert.equal(safari.searchParams.has("fullscreenbutton"),false);
+  safari.searchParams.delete("videocontrols");
+  assert.equal(safari.href,normal.href);
+  assert.equal(streamUrl(identity,"0042",{publisher:true,nativeControls:true}),streamUrl(identity,"0042",{publisher:true}));
+});
 test("Stats reject malformed, transport, audio and contradictory records",()=>{
   for (const stats of [null,[],"bad",{}, {audio:{_type:"audio",_last_bytes:100}},
     {bad:{_type:"audio",type:"Video Stream",_framesDecoded:10}},

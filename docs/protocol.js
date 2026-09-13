@@ -12,7 +12,7 @@ export const identityIsValid = identity => typeof identity?.id === "string" &&
   /^[A-Za-z0-9_-]{12,128}$/.test(identity.id) &&
   typeof identity.audience === "string" && /^[A-Za-z0-9_-]{12,128}$/.test(identity.audience);
 
-export function streamUrl(identity, code, { publisher = false, fps = 60, muted = false, parent = "" } = {}) {
+export function streamUrl(identity, code, { publisher = false, fps = 60, muted = false, parent = "", nativeControls = false } = {}) {
   if (!identityIsValid(identity) || !codeIsValid(code)) throw new Error("Ungültiger Stream-Zugang.");
   if (![30, 60].includes(fps)) throw new Error("Ungültige Bildrate.");
   const url = new URL(transport.base);
@@ -26,6 +26,8 @@ export function streamUrl(identity, code, { publisher = false, fps = 60, muted =
     for (const [key, value] of Object.entries(capture)) url.searchParams.set(key, value);
   } else {
     url.searchParams.set("cleanoutput", "");
+    // Safari's native video controls provide iPhone fullscreen inside the iframe.
+    if (nativeControls) url.searchParams.set("videocontrols", "");
     url.searchParams.set("screensharebitrate", transport.bitrate);
     url.searchParams.set("videobitrate", transport.bitrate);
     url.searchParams.set("scale", "100");

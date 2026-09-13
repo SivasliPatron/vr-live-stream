@@ -24,9 +24,18 @@ addEventListener('message',event=>{
   }
 });
 </script></body></html>`;
-async function pageFor(t,width=1440) {
+async function pageFor(t,width=1440,{nativeVideo=false,container=true}={}) {
   const context=await browser.newContext({viewport:{width,height:1000}});
   t.after(()=>context.close());
+  if (nativeVideo) await context.addInitScript(({container})=>{
+    // Capability simulation only: Chrome is not an iPhone's native video UI.
+    HTMLVideoElement.prototype.webkitEnterFullscreen=function(){};
+    if (!container) {
+      Element.prototype.requestFullscreen=undefined;
+      Element.prototype.webkitRequestFullscreen=undefined;
+      Object.defineProperty(document,"fullscreenEnabled",{configurable:true,get:()=>false});
+    }
+  },{container});
   const page=await context.newPage();
   await page.route(`${transport.base}**`,route=>route.fulfill({contentType:"text/html",body:fixture}));
   await page.goto(base); await page.waitForFunction(()=>!document.querySelector("#join").disabled);
@@ -53,6 +62,7 @@ test("No auto-join; validation, one click, viewer-only permissions and no PIN st
   assert.equal(await page.locator("#welcome").isVisible(),false);
   assert.equal(await page.locator("iframe").getAttribute("allow"),"autoplay; fullscreen");
   const url=new URL(frame.url()); assert.equal(url.searchParams.has("push"),false); assert.equal(url.hash,"#password=0042");
+  assert.equal(url.searchParams.has("videocontrols"),false);
   assert.deepEqual(await page.evaluate(()=>[localStorage.length,sessionStorage.length]),[0,0]);
 });
 test("Null stats prove API readiness, not live video; audio ignored",async t=>{
@@ -150,6 +160,44 @@ test("Blocked native fullscreen never enlarges the window and keeps persistent h
   assert.equal(await page.locator("#stage").getAttribute("aria-modal"),null);
   await emit(frame,{v:{_type:"video",_framesDecoded:1}});await state(page,"live");
   assert.equal(await page.locator("#fullscreenHelp").isVisible(),true);
+});
+test("Video-only fullscreen capability enables native viewer controls without a false outer button",async t=>{
+  const {page}=await pageFor(t,390,{nativeVideo:true,container:false});
+  assert.equal(await page.locator("#fullscreen").isVisible(),false);
+  assert.equal(await page.locator("#fullscreenHelp").isVisible(),false);
+  const frame=await start(page);const original=frame.url();
+  assert.equal(new URL(original).searchParams.has("videocontrols"),true);
+  assert.equal(new URL(original).searchParams.has("cleanoutput"),true);
+  assert.equal(new URL(original).searchParams.has("fullscreenbutton"),false);
+  assert.equal(await page.locator("#fullscreen").isVisible(),false);
+  assert.match(await page.locator("#fullscreenHelp").textContent(),/tippe ins Video.*Vollbild-Symbol/);
+  await emit(frame,{v:{_type:"video",_framesDecoded:1}});await state(page,"live");
+  assert.equal(await page.locator("#fullscreenHelp").isVisible(),true);
+  assert.equal(frame.url(),original);
+  assert.equal(await page.locator(".controls").evaluate(el=>el.inert),false);
+  assert.equal(await page.locator("#stage").getAttribute("aria-modal"),null);
+  assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
+  await page.locator("#sound").click();await page.locator("#reconnect").click();await state(page,"waiting");
+  const current=new URL(await page.locator("iframe[data-active]").getAttribute("src"));
+  assert.equal(current.searchParams.has("videocontrols"),true);
+  assert.equal(current.searchParams.get("mutespeaker"),"1");assert.equal(current.hash,"#password=0042");
+  await page.locator("#stop").click();
+  assert.equal(await page.locator("#fullscreenHelp").isVisible(),false);
+});
+test("Video API alongside container fullscreen retains the real outer fullscreen path",async t=>{
+  const {page}=await pageFor(t,768,{nativeVideo:true});await start(page);
+  assert.equal(await page.locator("#fullscreen").isVisible(),true);
+  await page.locator("#fullscreen").click();await page.waitForFunction(()=>document.fullscreenElement?.id==="stage");
+  assert.equal(await page.locator("#fullscreenHelp").isVisible(),false);
+  await page.locator("#exitFull").click();await page.waitForFunction(()=>!document.fullscreenElement);
+});
+test("Failed container fullscreen on a video-capable browser explains native controls without reconnecting",async t=>{
+  const {page}=await pageFor(t,390,{nativeVideo:true});const frame=await start(page);const original=frame.url();
+  await page.evaluate(()=>{document.querySelector("#stage").requestFullscreen=()=>Promise.reject(Error("blocked"));});
+  await page.locator("#fullscreen").click();await page.locator("#fullscreenHelp").waitFor({state:"visible"});
+  assert.match(await page.locator("#fullscreenHelp").textContent(),/Vollbild-Symbol/);
+  assert.equal(frame.url(),original);assert.equal(await page.locator("iframe[data-active]").count(),1);
+  assert.equal(await page.locator("#fullscreen").getAttribute("aria-pressed"),"false");
 });
 test("Unavailable and policy-disabled fullscreen produce help without a request",async t=>{
   const {page}=await pageFor(t);await start(page);

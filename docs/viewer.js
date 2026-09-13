@@ -1,5 +1,5 @@
 import { channel } from "./channel.js?v=2";
-import { transport, codeIsValid, identityIsValid, streamUrl, videoSample, sampleAdvanced } from "./protocol.js?v=2";
+import { transport, codeIsValid, identityIsValid, streamUrl, videoSample, sampleAdvanced } from "./protocol.js?v=4";
 
 const $ = id => document.getElementById(id);
 const ui = Object.fromEntries(["status","statusText","screen","stage","welcome","joinForm","code","join","sound","fullscreen","fullscreenHelp","exitFull","reconnect","stop","notice"].map(id => [id,$(id)]));
@@ -10,6 +10,20 @@ let started = 0, readyAt = null, lastProgress = 0, lastSample = null, hasVideo =
 let fullPending = false, fullRequested = false, stageOwned = false, fullToken = 0;
 let cancelFullRequest = null;
 const background = new Map();
+// Detect capabilities, not a device name. iPhone Safari exposes video fullscreen
+// without container fullscreen; its controls must receive the tap directly.
+const nativeVideoFullscreen = typeof document.createElement("video").webkitEnterFullscreen === "function";
+function containerFullscreenAvailable() {
+  return typeof ui.stage.requestFullscreen === "function" ? document.fullscreenEnabled !== false :
+    typeof ui.stage.webkitRequestFullscreen === "function" && document.webkitFullscreenEnabled !== false;
+}
+const videoFullscreenOnly = nativeVideoFullscreen && !containerFullscreenAvailable();
+function fullscreenHelp() {
+  ui.fullscreenHelp.textContent = nativeVideoFullscreen ?
+    "Vollbild im Video: Sobald das Bild läuft, tippe ins Video und dann auf das Vollbild-Symbol in der Videoleiste. Mit „Fertig“ kommst du zurück. Falls die Wiedergabe wartet, tippe im Video auf Play." :
+    "Echtes Vollbild ist hier nicht verfügbar oder wurde blockiert. Öffne den Zuschauer-Link direkt im Browser statt in einem Vorschaufenster und klicke dort auf Vollbild.";
+  ui.fullscreenHelp.hidden = false;
+}
 
 function state(next, message) {
   phase = next;
@@ -37,6 +51,9 @@ function controls(active) {
   ui.code.disabled = active;
   ui.join.disabled = active || !identityIsValid(channel);
   ui.sound.disabled = !active; ui.fullscreen.disabled = !active;
+  ui.fullscreen.hidden = videoFullscreenOnly;
+  if (active && videoFullscreenOnly) fullscreenHelp();
+  else if (!active) ui.fullscreenHelp.hidden = true;
   ui.reconnect.disabled = !active; ui.stop.hidden = !active;
   ui.welcome.hidden = active;
 }
@@ -81,7 +98,7 @@ function join() {
   frame.referrerPolicy = "no-referrer";
   const current = frame;
   current.addEventListener("load", () => { if (frame === current) { sound(); tick(); } });
-  current.src = streamUrl(channel, code, { muted, parent:location.origin });
+  current.src = streamUrl(channel, code, { muted, parent:location.origin, nativeControls:nativeVideoFullscreen });
   ui.screen.append(current); controls(true); sound();
   state("loading", "Der Player startet. Er fragt weder Kamera noch Mikrofon ab.");
   poll = setInterval(tick, 2000); tick();
@@ -142,7 +159,7 @@ async function enterFull() {
   const standard = typeof ui.stage.requestFullscreen === "function";
   const request = standard ? ui.stage.requestFullscreen : ui.stage.webkitRequestFullscreen;
   const enabled = standard ? document.fullscreenEnabled : document.webkitFullscreenEnabled;
-  if (typeof request !== "function" || enabled === false) { ui.fullscreenHelp.hidden = false; return; }
+  if (typeof request !== "function" || enabled === false) { fullscreenHelp(); return; }
   fullPending = true; fullRequested = true; stageOwned = false;
   ui.fullscreenHelp.hidden = true;
   const token = ++fullToken;
@@ -168,7 +185,7 @@ async function enterFull() {
     } catch { cancel(); }
   });
   if (token !== fullToken || !frame) return;
-  if (!entered || !fullscreenActive()) { fullRequested = false; ui.fullscreenHelp.hidden = false; }
+  if (!entered || !fullscreenActive()) { fullRequested = false; fullscreenHelp(); }
   fullPending = false; fullUi();
 }
 for (const name of ["fullscreenchange","webkitfullscreenchange"]) document.addEventListener(name, () => {

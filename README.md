@@ -25,7 +25,8 @@ Beenden: Tab-Freigabe stoppen und den Sender-Tab schließen. Um jemandem den wei
 - Großer Status: Offline → Player lädt → Verbinden → Live. Live erfordert eingehende Video-Metriken, nicht bloß eine offene Webseite.
 - Eine Player-Instanz pro Start. Keine automatische Schleife, die den ganzen Player während des Verbindungsaufbaus neu lädt.
 - Wiederherstellung über VDO.Ninja; bei Videostillstand ein zusätzlicher Keyframe-Versuch. **Neu verbinden** startet auf Wunsch einen neuen Versuch. **Beenden** bleibt beendet, auch nach Rückkehr des Internets.
-- Echtes Browser-Vollbild mit ausgeblendeter Browser-Navigation, soweit der Browser das erlaubt, und sichtbarem Schließen-Knopf. Keine bloße Fenstervergrößerung als Ersatz. Auch Vollbild aus dem eingebetteten Player wird nicht vom übergeordneten Fenster abgebrochen. Wenn ein Vorschaufenster Vollbild sperrt, erscheint ein eigener Hinweis: Zuschauer-Link direkt in Chrome oder Edge öffnen. Die Sperre selbst kann eine Webseite nicht umgehen.
+- Echtes Browser-Vollbild mit ausgeblendeter Browser-Navigation, soweit der Browser das erlaubt, und sichtbarem Schließen-Knopf. Keine bloße Fenstervergrößerung als Ersatz. Auch Vollbild aus dem eingebetteten Player wird nicht vom übergeordneten Fenster abgebrochen. Wenn ein Vorschaufenster Vollbild sperrt, erscheint ein eigener Hinweis: Zuschauer-Link direkt im Browser öffnen. Die Sperre selbst kann eine Webseite nicht umgehen.
+- **iPhone / Safari:** Den Zuschauer-Link direkt in Safari öffnen, Code eingeben und starten. Sobald das Bild läuft, ins Video tippen und das Vollbild-Symbol in der Videoleiste wählen. Zurück mit **Fertig**. Die Seite aktiviert dafür Safaris native Videosteuerung; wenn nur Video-Vollbild unterstützt wird, entfällt der äußere Vollbild-Knopf. Falls Safari den Start oder Ton blockiert, im Video auf Play tippen. Der Sender muss dafür nicht neu gestartet werden.
 - Keine eigene zusätzliche Klickfläche vor dem Videobild. Browser können trotzdem Ton-Autoplay blockieren; dann den sichtbaren Wiedergabeknopf im Player oder die Ton-Steuerung benutzen. Eine Browser-Freigabe lässt sich nicht zuverlässig umgehen.
 - Der Code wird nicht in Browser-Speichern oder der URL der GitHub-Seite abgelegt. An VDO.Ninja wird er im URL-Fragment für dessen Passwort-Funktion übergeben.
 
@@ -56,6 +57,7 @@ Voraussetzungen: Node.js ab Version 22, Google Chrome, für Windows-Verknüpfung
 npm ci
 npm test
 npm run test:browser
+npm run test:webkit
 npm start
 ```
 
@@ -89,4 +91,6 @@ Prüfstand und verbleibende Hardware-Tests stehen in [PRUEFUNG.md](PRUEFUNG.md).
 - [VDO.Ninja: Audience-Schlüssel](https://docs.vdo.ninja/advanced-settings/setup-parameters/and-audience)
 - [VDO.Ninja: Iframe-API](https://docs.vdo.ninja/guides/iframe-api-documentation)
 - [VDO.Ninja: Einbettung und Wiedergabe](https://docs.vdo.ninja/guides/how-to-use-vdo.ninja-on-a-website)
+- [VDO.Ninja: Native Videosteuerung und mobiles Vollbild](https://docs.vdo.ninja/advanced-settings/buttons-and-control-bar-parameters/and-videocontrols)
+- [WebKit: Benutzeraktion und eingebettete Seiten](https://webkit.org/blog/13862/the-user-activation-api/)
 - [VDO.Ninja: Quellcode und Architektur](https://github.com/steveseguin/vdo.ninja)
