@@ -4,6 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { buildSenderUrl, parseArgs, runLauncher } from "../scripts/start-stream.mjs";
+import { buildViewerUrl } from "../docs/viewer-url.js";
+import { STREAM_CONFIG } from "../docs/stream-config.js";
 
 // All files and browser/clipboard adapters in these tests are synthetic.
 // Never run the real launcher, inspect the user's credentials, or open a browser.
@@ -79,8 +81,14 @@ test("60-FPS-Neustart dreht nur den Code; 30 FPS behaelt dieselbe Sitzung", asyn
 test("Sender-URL erhaelt Quest-Tab-Audio, Senderdaten und begrenzte Recovery", () => {
   for (const fps of [30, 60]) {
     const url = new URL(buildSenderUrl(secrets, fps));
-    assert.equal(url.origin, "https://vdo.ninja");
+    assert.equal(url.origin + url.pathname, "https://steveseguin.github.io/vdo.ninja/");
+    const viewerUrl = new URL(buildViewerUrl(STREAM_CONFIG));
+    assert.equal(url.origin + url.pathname, viewerUrl.origin + viewerUrl.pathname);
     const q = url.searchParams;
+    assert.equal(q.get("salt"), "vdo.ninja");
+    assert.equal(q.get("turn"), "steve;setupYourOwnPlease;turns:turn.obs.ninja:443");
+    assert.equal(q.get("turn"), viewerUrl.searchParams.get("turn"));
+    assert.equal(q.has("relay"), false, "Sender wird nicht dauerhaft auf Relay gezwungen");
     assert.equal(q.get("push"), secrets.streamId);
     assert.equal(q.get("audience"), secrets.publisherToken);
     assert.equal(new URLSearchParams(url.hash.slice(1)).get("password"), secrets.accessCode);

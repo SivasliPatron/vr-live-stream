@@ -41,9 +41,11 @@ function validateSecrets(value) {
 export function buildSenderUrl(secrets, fps) {
   validateSecrets(secrets);
   if (![30, 60].includes(fps)) throw new Error("Die Bildrate muss 30 oder 60 sein.");
-  const url = new URL("https://vdo.ninja/");
+  const url = new URL("https://steveseguin.github.io/vdo.ninja/");
   const settings = {
     push: secrets.streamId, audience: secrets.publisherToken,
+    // Same official frontend, sender salt and public VDO fallback as the viewer.
+    salt: "vdo.ninja", turn: "steve;setupYourOwnPlease;turns:turn.obs.ninja:443",
     screenshare: "", screensharequality: "1", screensharefps: String(fps),
     screensharestereo: "", screensharecontenthint: "motion",
     displaysurface: "browser", systemaudio: "exclude", maxviewers: "6",

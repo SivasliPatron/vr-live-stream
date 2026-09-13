@@ -12,7 +12,7 @@ Meta Quest → Meta-Casting im Chrome-Tab → VDO.Ninja → GitHub-Zuschauer-Sei
 
 GitHub Pages liefert nur die Website aus. Bild und Spielton werden von VDO.Ninja über WebRTC übertragen, direkt oder bei Bedarf über einen Relay-Server.
 
-Der Zuschauer-Player verwendet die [offizielle GitHub-Ausweichseite von VDO.Ninja](https://docs.vdo.ninja/help/fail-safes-and-backups), weil die Hauptseite hier wiederholt unvollständige Skript-Downloads lieferte. `salt=vdo.ninja` erhält die Zuordnung zum unveränderten Sender und seinem Zugangscode. Der Code bleibt im URL-Fragment; der Sender muss nicht neu eingerichtet werden.
+Zuschauer-Player und lokaler Senderstart verwenden die [offizielle GitHub-Ausweichseite von VDO.Ninja](https://docs.vdo.ninja/help/fail-safes-and-backups), weil die Hauptseite hier wiederholt unvollständige Skript-Downloads lieferte. `salt=vdo.ninja` erhält die Zuordnung und den Code-Schutz. Der Code bleibt im URL-Fragment; dauerhafte Senderdaten müssen nicht neu eingerichtet werden. Ein bereits geöffneter alter Sender-Tab ändert sich dadurch nicht: Für den neuen Startweg alte Sender-Tabs schließen und **02 VR-Stream 720p60 (Chrome).lnk** erneut öffnen. Dabei entsteht wie üblich ein neuer Code für die Zuschauer.
 
 Die [TURN-Konfiguration](https://docs.vdo.ninja/advanced-settings/turn-and-stun-parameters/turn) wählt den bereits in VDO enthaltenen deutschen TLS-Ausweichserver vorab aus. So hängt der Start nicht am erneuten, unbegrenzten Download der automatischen Relay-Serverliste. Direkte Verbindungen bleiben erlaubt; nur der Relay-Ausweichweg ist auf diesen Server festgelegt. Das ersetzt keine Internetverbindung und entlastet den Sender nicht von mehreren Zuschauern.
 
