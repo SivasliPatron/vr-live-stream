@@ -1,6 +1,7 @@
 # Lokale Abhaengigkeiten und Testartefakte
 node_modules/
 coverage/
+test-results/
 
 # Private Senderdaten - niemals nach GitHub uebertragen
 .private/

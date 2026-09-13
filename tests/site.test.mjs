@@ -105,19 +105,25 @@ test("schwierige Netze erhalten automatische Wiederherstellung und Relay-Fallbac
   assert.equal(directUrl.searchParams.get("audience"), STREAM_CONFIG.audienceToken);
   assert.equal(directUrl.searchParams.get("autorecover"), "1");
   assert.equal(directUrl.searchParams.get("autorelay"), "1");
-  assert.equal(directUrl.searchParams.get("mutespeaker"), "1");
+  assert.equal(directUrl.searchParams.get("mutespeaker"), "0");
   assert.equal(directUrl.searchParams.get("screensharebitrate"), "6000");
   assert.equal(directUrl.searchParams.get("buffer"), "200");
-  assert.equal(directUrl.searchParams.get("p2pfailtimeout"), "12000");
+  assert.equal(directUrl.searchParams.get("p2pfailtimeout"), "7000");
+  assert.equal(directUrl.searchParams.get("retry"), "10");
+  assert.equal(directUrl.searchParams.get("peerrecoversteps"), "5");
   assert.equal(directUrl.searchParams.get("pendingicettl"), "20000");
   assert.equal(directUrl.searchParams.has("relay"), false);
   assert.equal(compatibilityUrl.searchParams.get("screensharebitrate"), "6000");
   assert.equal(compatibilityUrl.searchParams.get("buffer"), "200");
   assert.equal(compatibilityUrl.searchParams.has("relay"), true);
-  assert.ok(STREAM_CONFIG.connectTimeoutMs >= 60_000);
-  assert.match(app, /MAX_CONFIRMED_MISSING_STATS = 25/);
-  assert.match(app, /DISCONNECT_GRACE_MS = 90_000/);
-  assert.match(app, /connect\(\{ mode: CONNECTION_MODE\.compatibility \}\)/);
+  for (const mode of Object.values(CONNECTION_MODE)) {
+    const mutedUrl = new URL(buildViewerUrl(STREAM_CONFIG, mode, { muted: true }));
+    assert.equal(mutedUrl.searchParams.get("mutespeaker"), "1");
+  }
+  assert.equal(STREAM_CONFIG.connectTimeoutMs, 25_000);
+  assert.equal(STREAM_CONFIG.reconnectDelayMs, 3_000);
+  assert.equal(STREAM_CONFIG.maxReconnectDelayMs, 20_000);
+  assert.match(app, /getTargetVideoStats/);
 });
 
 test("Vollbild hat einen browserunabhängigen Rückfallmodus", () => {
@@ -134,7 +140,7 @@ test("Vollbild hat einen browserunabhängigen Rückfallmodus", () => {
   assert.match(app, /bypassCooldown/);
   assert.match(app, /screen\.orientation\.lock/);
   assert.match(app, /event\.key === "Escape"/);
-  assert.match(app, /exitFullscreenButton : elements\.fullscreenButton/);
+  assert.match(app, /exitFullscreenButton : returnTarget/);
   assert.match(app, /FULLSCREEN_CHANGE_TIMEOUT_MS/);
   assert.match(css, /\.player-frame\.is-window-fullscreen/);
   assert.match(css, /html\.has-window-fullscreen/);
@@ -180,7 +186,7 @@ test("eingebetteter Player erhält keine Kamera- oder Mikrofonrechte", () => {
   assert.match(app, /sandbox/);
 });
 
-test("erster Klick startet das Bild ohne Klick in den fremden Player", () => {
+test("bewusster Start fordert Bild und Spielton mit delegierter Autoplay-Freigabe an", () => {
   const app = read("docs/app.js");
   const viewerUrl = new URL(buildViewerUrl(STREAM_CONFIG, CONNECTION_MODE.direct));
   const iframeLoadHandler = app.match(
@@ -189,11 +195,11 @@ test("erster Klick startet das Bild ohne Klick in den fremden Player", () => {
   const allowIndex = app.indexOf('player.allow = "autoplay; fullscreen"');
   const srcIndex = app.indexOf("player.src = buildViewerUrl");
 
-  assert.equal(viewerUrl.searchParams.get("mutespeaker"), "1");
-  assert.match(app, /const START_MUTED = true/);
+  assert.equal(viewerUrl.searchParams.get("mutespeaker"), "0");
+  assert.match(app, /const START_MUTED = false/);
   assert.ok(allowIndex >= 0 && allowIndex < srcIndex, "Autoplay-Freigabe muss vor src gesetzt werden");
   assert.ok(iframeLoadHandler, "Iframe-Load-Handler fehlt");
-  assert.match(iframeLoadHandler[1], /sendToPlayer\(\{ mute: true \}\)/);
+  assert.match(iframeLoadHandler[1], /sendToPlayer\(\{ mute: muted \}\)/);
   assert.doesNotMatch(iframeLoadHandler[1], /mute: false/);
   assert.match(app, /sendToPlayer\(\{ mute: muted \}\)/);
 });
@@ -305,7 +311,7 @@ test("keine Sender-URL, Publisher-Tokens oder Sitzungscodes können committed we
 
   for (const relativePath of listed) {
     const body = readFileSync(resolve(root, relativePath), "utf8");
-    assert.doesNotMatch(body, /[?&]push(?:=|%3d)/i, `${relativePath} enthält eine Sender-URL`);
+    assert.equal(/[?&]push(?:=|%3d)/i.test(body), false, `${relativePath} enthält eine Sender-URL`);
     if (publisherToken) {
       assert.equal(body.includes(publisherToken), false, `${relativePath} enthält den Publisher-Token`);
     }

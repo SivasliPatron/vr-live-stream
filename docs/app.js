@@ -1,13 +1,20 @@
-import { STREAM_CONFIG } from "./stream-config.js?v=20260904-1";
+import { STREAM_CONFIG } from "./stream-config.js?v=20260905-connect-1";
 import {
   getHealthStatsStatus,
+  getTargetVideoStats,
   isSameStreamId,
   isTargetVideoEvent,
   nextConfirmedMissingCount,
   normalizeConnectionState,
-} from "./player-health.js?v=20260824-2";
-import { buildViewerUrl, CONNECTION_MODE } from "./viewer-url.js?v=20260828-1";
-import { createFullscreenTransitionGate } from "./fullscreen-transition.js?v=20260826-2";
+} from "./player-health.js?v=20260905-connect-1";
+import { buildViewerUrl, CONNECTION_MODE } from "./viewer-url.js?v=20260905-connect-1";
+import {
+  getPreferredConnectionMode,
+  getReconnectDelay,
+  otherConnectionMode,
+  rememberConnectionMode,
+} from "./connection-policy.js?v=20260905-connect-1";
+import { createFullscreenTransitionGate } from "./fullscreen-transition.js?v=20260905-1";
 
 const elements = {
   statusPill: document.querySelector("#statusPill"),
@@ -23,8 +30,13 @@ const elements = {
   accessError: document.querySelector("#accessError"),
   primaryAction: document.querySelector("#primaryAction"),
   primaryActionLabel: document.querySelector("#primaryActionLabel"),
+  connectionCancelButton: document.querySelector("#connectionCancelButton"),
   soundButton: document.querySelector("#soundButton"),
   soundLabel: document.querySelector("#soundLabel"),
+  playerSoundButton: document.querySelector("#playerSoundButton"),
+  playerSoundLabel: document.querySelector("#playerSoundLabel"),
+  retrySoundButton: document.querySelector("#retrySoundButton"),
+  audioHelp: document.querySelector("#audioHelp"),
   fullscreenButton: document.querySelector("#fullscreenButton"),
   fullscreenIcon: document.querySelector("#fullscreenButton .fullscreen-icon"),
   fullscreenLabel: document.querySelector("#fullscreenButton span:last-child"),
@@ -33,13 +45,20 @@ const elements = {
   controlNote: document.querySelector("#controlNote"),
 };
 
-const VDO_ORIGIN = new URL(STREAM_CONFIG.viewerBaseUrl).origin;
-const STATS_INTERVAL_MS = 4_000;
-const MAX_CONFIRMED_MISSING_STATS = 25;
-const DISCONNECT_GRACE_MS = 90_000;
+// Ein unvollständiger Konfigurationswert darf die Bedienoberfläche nicht abbrechen.
+let VDO_ORIGIN = "";
+try {
+  VDO_ORIGIN = new URL(STREAM_CONFIG.viewerBaseUrl).origin;
+} catch {
+  // setState zeigt die fehlende Einrichtung an.
+}
+const STATS_INTERVAL_MS = 2_000;
+const MAX_CONFIRMED_MISSING_STATS = 4;
+const DISCONNECT_GRACE_MS = 15_000;
+const PLAYER_RETIRE_TIMEOUT_MS = 1_200;
 const FULLSCREEN_CHANGE_TIMEOUT_MS = 1_200;
 const FULLSCREEN_TOGGLE_COOLDOWN_MS = 450;
-const START_MUTED = true;
+const START_MUTED = false;
 const LIVE_CONTROL_NOTE = "Direkte Zuschauer-Verbindung · keine Kamera · kein Mikrofon";
 const COMPATIBILITY_CONTROL_NOTE =
   "Kompatibilitätsverbindung über Relay · keine Kamera · kein Mikrofon";
@@ -53,11 +72,18 @@ let disconnectTimer = null;
 let reconnectTimer = null;
 let statsTimer = null;
 let confirmedMissingStats = 0;
+let lastVideoStats = null;
+let retryAttempt = 0;
+const attemptedModes = new Set();
+const retiredPlayers = new Map();
 let fallbackFullscreen = false;
 let fullscreenWasActive = false;
 let connectionMode = CONNECTION_MODE.direct;
 let recoveringConnection = false;
 let accessCode = "";
+let fullscreenReturnFocus = null;
+let fullscreenRequested = false;
+const fullscreenBackground = new Map();
 
 const fullscreenTransition = createFullscreenTransitionGate({
   cooldownMs: FULLSCREEN_TOGGLE_COOLDOWN_MS,
@@ -99,6 +125,7 @@ function applyViewerCredentialsFromInputs() {
 function handleCredentialEdit() {
   accessCode = elements.accessCodeInput.value.trim();
   viewerStarted = false;
+  retryAttempt = 0;
   connectionMode = CONNECTION_MODE.direct;
   clearReconnectTimer();
   setAccessError();
@@ -149,16 +176,25 @@ function clearReconnectTimer() {
 }
 
 function updateSoundLabel() {
-  elements.soundLabel.textContent = muted ? "Ton einschalten" : "Ton ausschalten";
-  elements.soundButton.setAttribute("aria-pressed", String(!muted));
-  elements.soundButton.setAttribute(
-    "aria-label",
-    muted ? "Ton einschalten" : "Ton ausschalten",
-  );
+  const label = muted ? "Ton einschalten" : "Ton ausschalten";
+  elements.soundLabel.textContent = label;
+  elements.playerSoundLabel.textContent = label;
+  for (const button of [elements.soundButton, elements.playerSoundButton]) {
+    button.setAttribute("aria-pressed", String(!muted));
+    button.setAttribute("aria-label", label);
+  }
 
-  if (state === "live") {
+  if (state === "live" && !recoveringConnection) {
     elements.controlNote.textContent = getLiveControlNote();
   }
+}
+
+function setSoundMuted(value) {
+  muted = value;
+  // VDO nutzt hier 0..1. Entstummen versucht auch blockierte Wiedergabe erneut.
+  sendToPlayer({ mute: muted });
+  sendToPlayer({ volume: 1 });
+  updateSoundLabel();
 }
 
 function updatePrimaryAction(label, hint) {
@@ -180,10 +216,31 @@ function getNativeFullscreenElement() {
 }
 
 function isFullscreenActive() {
-  return Boolean(getNativeFullscreenElement()) || fallbackFullscreen;
+  return getNativeFullscreenElement() === elements.playerFrame || fallbackFullscreen;
 }
 
 function setFallbackFullscreen(enabled, { moveFocus = true } = {}) {
+  if (enabled && !fallbackFullscreen) {
+    // Nur der Player bleibt im Tastatur- und Screenreader-Fokus erreichbar.
+    for (let node = elements.playerFrame; node.parentElement; node = node.parentElement) {
+      for (const sibling of node.parentElement.children) {
+        if (sibling !== node && !fullscreenBackground.has(sibling)) {
+          fullscreenBackground.set(sibling, sibling.inert);
+          sibling.inert = true;
+        }
+      }
+      if (node.parentElement === document.body) break;
+    }
+    elements.playerFrame.setAttribute("role", "dialog");
+    elements.playerFrame.setAttribute("aria-modal", "true");
+    elements.playerFrame.setAttribute("aria-label", "VR-Livestream im Vollbild");
+  } else if (!enabled) {
+    for (const [element, inert] of fullscreenBackground) element.inert = inert;
+    fullscreenBackground.clear();
+    elements.playerFrame.removeAttribute("role");
+    elements.playerFrame.removeAttribute("aria-modal");
+    elements.playerFrame.removeAttribute("aria-label");
+  }
   fallbackFullscreen = enabled;
   elements.playerFrame.classList.toggle("is-window-fullscreen", enabled);
   document.documentElement.classList.toggle("has-window-fullscreen", enabled);
@@ -207,9 +264,14 @@ function syncFullscreenUi({ moveFocus = true, forceFocus = false } = {}) {
   }
   elements.exitFullscreenButton.disabled = transitionPending;
   elements.fullscreenLabel.textContent = active ? "Vollbild schließen" : "Vollbild";
+  // Die native Wiedergabefreigabe im fremden Player bleibt per Tastatur erreichbar.
+  if (player) player.tabIndex = state === "live" && !fallbackFullscreen ? 0 : -1;
 
   if (moveFocus && (forceFocus || active !== fullscreenWasActive)) {
-    const target = active ? elements.exitFullscreenButton : elements.fullscreenButton;
+    const returnTarget = fullscreenReturnFocus?.isConnected && !fullscreenReturnFocus.disabled
+      ? fullscreenReturnFocus
+      : state === "live" ? elements.fullscreenButton : elements.accessCodeInput;
+    const target = active ? elements.exitFullscreenButton : returnTarget;
     window.requestAnimationFrame(() => {
       if (target.isConnected && !target.disabled) {
         target.focus({ preventScroll: true });
@@ -248,7 +310,12 @@ function unlockFullscreenOrientation() {
 }
 
 function handleNativeFullscreenChange() {
-  const nativeFullscreenActive = Boolean(getNativeFullscreenElement());
+  const nativeFullscreenActive = getNativeFullscreenElement() === elements.playerFrame;
+  if (nativeFullscreenActive && (!fullscreenRequested || state !== "live")) {
+    void exitFullscreen({ bypassCooldown: true });
+    return;
+  }
+  if (!nativeFullscreenActive && !fallbackFullscreen) fullscreenRequested = false;
   if (nativeFullscreenActive && fallbackFullscreen) {
     setFallbackFullscreen(false, { moveFocus: false });
   }
@@ -301,6 +368,7 @@ function logFullscreenFallback(error) {
 }
 
 async function exitFullscreen({ bypassCooldown = false } = {}) {
+  fullscreenRequested = false;
   if (!isFullscreenActive()) {
     syncFullscreenUi({ moveFocus: false });
     return;
@@ -346,6 +414,8 @@ async function toggleFullscreen() {
     return;
   }
 
+  fullscreenReturnFocus = elements.fullscreenButton;
+  fullscreenRequested = true;
   syncFullscreenUi({ moveFocus: false });
   const nativeFullscreenBlocked =
     document.fullscreenEnabled === false && document.webkitFullscreenEnabled !== true;
@@ -359,15 +429,15 @@ async function toggleFullscreen() {
 
       if (nativeRequestAvailable) {
         try {
-          if (typeof standardRequest === "function") {
-            await Promise.resolve(
-              standardRequest.call(elements.playerFrame, { navigationUI: "hide" }),
-            );
-          } else {
-            await Promise.resolve(webkitRequest.call(elements.playerFrame));
-          }
-
-          if (getNativeFullscreenElement() || (await waitForNativeFullscreen())) {
+          const request = typeof standardRequest === "function"
+            ? standardRequest.call(elements.playerFrame, { navigationUI: "hide" })
+            : webkitRequest.call(elements.playerFrame);
+          // Manche Browser liefern ein Promise, das ohne Ereignis hängen bleibt.
+          const active = await Promise.race([
+            Promise.resolve(request).then(waitForNativeFullscreen),
+            waitForNativeFullscreen(),
+          ]);
+          if (active) {
             await lockFullscreenOrientation();
             return;
           }
@@ -377,7 +447,7 @@ async function toggleFullscreen() {
       }
     }
 
-    if (!getNativeFullscreenElement()) {
+    if (state === "live" && fullscreenRequested && !getNativeFullscreenElement()) {
       setFallbackFullscreen(true, { moveFocus: false });
       elements.controlNote.textContent =
         "Fensterfüllender Modus aktiv · mit × wieder schließen";
@@ -385,6 +455,9 @@ async function toggleFullscreen() {
   } finally {
     fullscreenTransition.finish();
     syncFullscreenUi({ forceFocus: true });
+    if (state !== "live" && isFullscreenActive()) {
+      void exitFullscreen({ bypassCooldown: true });
+    }
   }
 }
 
@@ -396,10 +469,15 @@ function setState(nextState) {
   elements.accessForm.setAttribute("aria-busy", String(nextState === "connecting"));
 
   const live = nextState === "live";
-  const accessInputsEnabled = nextState !== "live" && isConfigured && navigator.onLine;
+  const accessInputsEnabled = nextState !== "live" && isConfigured;
   elements.accessCodeInput.disabled = !accessInputsEnabled;
   elements.soundButton.disabled = !live;
-  elements.reconnectButton.disabled = !isConfigured || nextState === "connecting";
+  elements.playerSoundButton.disabled = !live;
+  elements.retrySoundButton.disabled = !live;
+  elements.audioHelp.hidden = !live;
+  elements.connectionCancelButton.hidden = nextState !== "connecting";
+  elements.reconnectButton.disabled = !isConfigured || !navigator.onLine ||
+    !hasViewerCredentials() || nextState === "connecting";
   syncFullscreenUi({ moveFocus: false });
 
   if (nextState === "live") {
@@ -416,11 +494,11 @@ function setState(nextState) {
       ? "KOMPATIBILITÄTSVERBINDUNG"
       : "VERBINDUNG WIRD AUFGEBAUT";
     elements.placeholderTitle.textContent = compatibilityMode
-      ? "Ein anderer Netzwerkweg wird ausprobiert …"
-      : "Die Quest wird gesucht …";
+      ? "Die Quest wird verbunden…"
+      : "Die Quest wird gesucht…";
     elements.placeholderText.textContent = compatibilityMode
       ? "Die Seite verwendet jetzt automatisch einen Relay-Server für dieses Netzwerk."
-      : "Bei schwierigen WLAN- oder Mobilfunknetzen kann das bis zu einer Minute dauern.";
+      : "Die Verbindung wird geprüft. Falls sie nicht klappt, folgt automatisch ein anderer Netzwerkweg.";
     updatePrimaryAction(
       compatibilityMode ? "Ersatzverbindung wird geprüft" : "Verbindung wird aufgebaut",
       compatibilityMode
@@ -446,6 +524,11 @@ function setState(nextState) {
     return;
   }
 
+  if (!navigator.onLine) {
+    showNetworkOfflineState();
+    return;
+  }
+
   elements.placeholderKicker.textContent = "STREAM OFFLINE";
   elements.placeholderTitle.textContent = viewerStarted
     ? "Der Stream ist gerade nicht erreichbar."
@@ -456,8 +539,8 @@ function setState(nextState) {
   updatePrimaryAction(
     viewerStarted ? "Jetzt neu verbinden" : "Stream ansehen",
     viewerStarted
-      ? "Direktverbindung neu starten"
-      : "Vierstelligen Code eingeben",
+      ? "Verbindung neu starten"
+      : "Mit Spielton starten",
   );
   elements.controlNote.textContent = viewerStarted
     ? "Automatische Wiederverbindung ist aktiv"
@@ -465,11 +548,12 @@ function setState(nextState) {
 }
 
 function showNetworkOfflineState() {
-  setState("offline");
   elements.placeholderKicker.textContent = "KEINE INTERNETVERBINDUNG";
   elements.placeholderTitle.textContent = "Dieses Gerät ist gerade offline.";
   elements.placeholderText.textContent =
-    "Sobald die Internetverbindung zurück ist, versucht die Seite den Stream automatisch erneut.";
+    viewerStarted
+      ? "Sobald die Internetverbindung zurück ist, versucht die Seite den Stream automatisch erneut."
+      : "Du kannst den Code bereits eingeben und den Stream starten, sobald du wieder online bist.";
   updatePrimaryAction("Auf Internet warten", "Automatischer neuer Versuch");
   elements.primaryAction.disabled = true;
   elements.reconnectButton.disabled = true;
@@ -484,11 +568,35 @@ function sendToPlayer(message) {
   player.contentWindow.postMessage(message, VDO_ORIGIN);
 }
 
+function finishRetiringPlayer(source) {
+  const retired = retiredPlayers.get(source);
+  if (!retired) return;
+  clearTimer(retired.timer);
+  retired.element.remove();
+  retiredPlayers.delete(source);
+}
+
 function removePlayer() {
   clearConnectionTimers();
-  player?.remove();
+  const previous = player;
   player = null;
-  elements.playerSlot.replaceChildren();
+  if (!previous) return;
+  previous.hidden = true;
+  previous.tabIndex = -1;
+  previous.removeAttribute("data-active-player");
+  const source = previous.contentWindow;
+  if (!source) {
+    previous.remove();
+    return;
+  }
+  // Im DOM lassen, bis VDO aufgelegt hat. Sofortiges Entfernen verschluckt
+  // postMessage und kann beim Sender vorübergehend einen Zuschauerplatz belegen.
+  retiredPlayers.set(source, {
+    element: previous,
+    timer: window.setTimeout(() => finishRetiringPlayer(source), PLAYER_RETIRE_TIMEOUT_MS),
+  });
+  source.postMessage({ mute: true }, VDO_ORIGIN);
+  source.postMessage({ hangup: true }, VDO_ORIGIN);
 }
 
 function scheduleReconnect() {
@@ -506,16 +614,21 @@ function scheduleReconnect() {
 
   reconnectTimer = window.setTimeout(() => {
     reconnectTimer = null;
-    connect({ mode: CONNECTION_MODE.direct });
-  }, STREAM_CONFIG.reconnectDelayMs);
+    if (viewerStarted && !document.hidden && navigator.onLine && hasViewerCredentials()) {
+      connect();
+    }
+  }, getReconnectDelay(retryAttempt++, STREAM_CONFIG));
 }
 
 function markOffline({ reconnect = true } = {}) {
+  fullscreenRequested = false;
+  clearReconnectTimer();
   removePlayer();
   confirmedMissingStats = 0;
   recoveringConnection = false;
   elements.playerFrame.dataset.connectionHealth = "stable";
   setState("offline");
+  if (isFullscreenActive()) void exitFullscreen({ bypassCooldown: true });
 
   if (reconnect) {
     scheduleReconnect();
@@ -542,6 +655,8 @@ function markLive() {
     setState("live");
   }
   if (becameLive) {
+    retryAttempt = 0;
+    rememberConnectionMode(connectionMode);
     sendToPlayer({ mute: muted });
     sendToPlayer({ volume: 1 });
   }
@@ -576,7 +691,7 @@ function requestStats() {
   sendToPlayer({ getStats: true, cib: "health" });
 }
 
-function connect({ mode = CONNECTION_MODE.direct } = {}) {
+function connect({ mode = getPreferredConnectionMode(), continuingCycle = false } = {}) {
   if (!isConfigured) {
     setState("offline");
     return;
@@ -594,16 +709,18 @@ function connect({ mode = CONNECTION_MODE.direct } = {}) {
     viewerStarted = true;
     clearReconnectTimer();
     removePlayer();
-    showNetworkOfflineState();
+    setState("offline");
     return;
   }
 
   viewerStarted = true;
+  if (!continuingCycle) attemptedModes.clear();
+  attemptedModes.add(mode);
   clearReconnectTimer();
   removePlayer();
-  muted = START_MUTED;
   updateSoundLabel();
   confirmedMissingStats = 0;
+  lastVideoStats = null;
   recoveringConnection = false;
   elements.playerFrame.dataset.connectionHealth = "stable";
   connectionMode = mode;
@@ -611,7 +728,9 @@ function connect({ mode = CONNECTION_MODE.direct } = {}) {
   setState("connecting");
 
   player = document.createElement("iframe");
+  player.dataset.activePlayer = "true";
   player.title = "VR-Livestream";
+  player.tabIndex = -1;
   player.allow = "autoplay; fullscreen";
   player.referrerPolicy = "no-referrer";
   player.setAttribute("allowfullscreen", "");
@@ -620,14 +739,17 @@ function connect({ mode = CONNECTION_MODE.direct } = {}) {
     "allow-scripts allow-same-origin allow-forms allow-presentation",
   );
 
+  const currentPlayer = player;
   player.addEventListener("load", () => {
-    sendToPlayer({ mute: true });
+    if (player !== currentPlayer) return;
+    sendToPlayer({ mute: muted });
     sendToPlayer({ volume: 1 });
     requestStats();
   });
 
   player.src = buildViewerUrl(STREAM_CONFIG, connectionMode, {
     accessCode,
+    muted,
   });
   elements.playerSlot.append(player);
 
@@ -637,8 +759,9 @@ function connect({ mode = CONNECTION_MODE.direct } = {}) {
       return;
     }
 
-    if (connectionMode === CONNECTION_MODE.direct) {
-      connect({ mode: CONNECTION_MODE.compatibility });
+    const nextMode = otherConnectionMode(connectionMode);
+    if (!attemptedModes.has(nextMode)) {
+      connect({ mode: nextMode, continuingCycle: true });
       return;
     }
 
@@ -647,7 +770,7 @@ function connect({ mode = CONNECTION_MODE.direct } = {}) {
 }
 
 window.addEventListener("message", (event) => {
-  if (event.origin !== VDO_ORIGIN || event.source !== player?.contentWindow) {
+  if (event.origin !== VDO_ORIGIN) {
     return;
   }
 
@@ -656,9 +779,17 @@ window.addEventListener("message", (event) => {
     return;
   }
 
+  if (retiredPlayers.has(event.source)) {
+    if (message.action === "hungup" && message.value === true) {
+      finishRetiringPlayer(event.source);
+    }
+    return;
+  }
+  if (event.source !== player?.contentWindow) return;
+
   if (isTargetVideoEvent(message, STREAM_CONFIG.streamId)) {
-    confirmedMissingStats = 0;
-    markLive();
+    // Track-Erstellung beweist noch keinen Empfang. Erst Videodaten zählen.
+    requestStats();
     return;
   }
 
@@ -670,7 +801,20 @@ window.addEventListener("message", (event) => {
     );
 
     if (healthStatus === "present") {
-      markLive();
+      const sample = getTargetVideoStats(message, STREAM_CONFIG.streamId);
+      if (sample) {
+        const progressed = ["framesDecoded", "bytesReceived"].some((key) =>
+          sample[key] !== null && sample[key] > 0 &&
+          (lastVideoStats?.[key] == null || sample[key] > lastVideoStats[key]),
+        );
+        // Auch kleinere Werte übernehmen: Nach Track-Neustart zählen Deltas
+        // von der neuen Basis, statt auf den alten Gesamtwert zu warten.
+        lastVideoStats = {
+          framesDecoded: sample.framesDecoded ?? lastVideoStats?.framesDecoded ?? null,
+          bytesReceived: sample.bytesReceived ?? lastVideoStats?.bytesReceived ?? null,
+        };
+        if (progressed) markLive();
+      }
     } else if (healthStatus === "missing" && state === "live") {
       if (confirmedMissingStats >= 2) {
         showRecoveringState();
@@ -688,14 +832,13 @@ window.addEventListener("message", (event) => {
   const connectionState = normalizeConnectionState(message.value);
 
   if (isTargetConnectionEvent && connectionState === true) {
-    clearTimer(disconnectTimer);
-    disconnectTimer = null;
+    requestStats();
     return;
   }
 
   if (isTargetConnectionEvent && connectionState === false && state === "live") {
     showRecoveringState();
-    clearTimer(disconnectTimer);
+    if (disconnectTimer !== null) return;
     disconnectTimer = window.setTimeout(() => {
       if (state === "live") {
         markOffline();
@@ -706,12 +849,21 @@ window.addEventListener("message", (event) => {
 
 elements.accessForm.addEventListener("submit", (event) => {
   event.preventDefault();
+  if (state === "connecting" || state === "live") return;
 
   if (!applyViewerCredentialsFromInputs()) {
     return;
   }
 
-  connect({ mode: CONNECTION_MODE.direct });
+  retryAttempt = 0;
+  connect();
+});
+
+elements.connectionCancelButton.addEventListener("click", () => {
+  viewerStarted = false;
+  retryAttempt = 0;
+  markOffline({ reconnect: false });
+  elements.accessCodeInput.focus({ preventScroll: true });
 });
 
 elements.accessCodeInput.addEventListener("input", () => {
@@ -722,19 +874,18 @@ elements.accessCodeInput.addEventListener("input", () => {
 });
 
 elements.reconnectButton.addEventListener("click", () => {
+  if (state === "connecting") return;
   if (!applyViewerCredentialsFromInputs()) {
     return;
   }
 
-  connect({ mode: CONNECTION_MODE.direct });
+  retryAttempt = 0;
+  connect();
 });
 
-elements.soundButton.addEventListener("click", () => {
-  muted = !muted;
-  sendToPlayer({ mute: muted });
-  sendToPlayer({ volume: 1 });
-  updateSoundLabel();
-});
+elements.soundButton.addEventListener("click", () => setSoundMuted(!muted));
+elements.playerSoundButton.addEventListener("click", () => setSoundMuted(!muted));
+elements.retrySoundButton.addEventListener("click", () => setSoundMuted(false));
 
 elements.fullscreenButton.addEventListener("click", toggleFullscreen);
 elements.exitFullscreenButton.addEventListener("click", () => {
@@ -745,33 +896,46 @@ document.addEventListener("fullscreenchange", handleNativeFullscreenChange);
 document.addEventListener("webkitfullscreenchange", handleNativeFullscreenChange);
 document.addEventListener("keydown", (event) => {
   if (event.key === "Escape" && fallbackFullscreen) {
+    event.preventDefault();
     exitFullscreen({ bypassCooldown: true });
+  }
+  if (event.key === "Tab" && fallbackFullscreen) {
+    const targets = [...elements.playerFrame.querySelectorAll('button:not(:disabled), input:not(:disabled), [tabindex="0"]')]
+      .filter((element) => element.getClientRects().length && getComputedStyle(element).visibility !== "hidden");
+    const first = targets[0];
+    const last = targets.at(-1);
+    if (first && (event.shiftKey ? document.activeElement === first : document.activeElement === last)) {
+      event.preventDefault();
+      (event.shiftKey ? last : first).focus({ preventScroll: true });
+    }
   }
 });
 
 window.addEventListener("offline", () => {
-  if (viewerStarted) {
-    markOffline({ reconnect: false });
-    showNetworkOfflineState();
-  }
+  markOffline({ reconnect: false });
 });
 
 window.addEventListener("online", () => {
   if (viewerStarted && state === "offline") {
-    connect({ mode: CONNECTION_MODE.direct });
+    connect();
+  } else {
+    setState(state);
   }
 });
 
 document.addEventListener("visibilitychange", () => {
   if (!document.hidden && viewerStarted && state === "offline") {
-    connect({ mode: CONNECTION_MODE.direct });
+    connect();
   }
 });
 
-window.addEventListener("beforeunload", () => {
+window.addEventListener("pagehide", () => {
   setFallbackFullscreen(false, { moveFocus: false });
-  clearReconnectTimer();
-  removePlayer();
+  markOffline({ reconnect: false });
+});
+
+window.addEventListener("pageshow", (event) => {
+  if (event.persisted && viewerStarted) connect();
 });
 
 updateSoundLabel();

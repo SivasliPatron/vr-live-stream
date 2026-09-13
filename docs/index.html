@@ -24,8 +24,8 @@
       content="https://sivaslipatron.github.io/vr-live-stream/"
     />
     <title>VR Live</title>
-    <link rel="stylesheet" href="./styles.css?v=20260904-1" />
-    <script type="module" src="./app.js?v=20260904-1"></script>
+    <link rel="stylesheet" href="./styles.css?v=20260905-connect-1" />
+    <script type="module" src="./app.js?v=20260905-connect-1"></script>
   </head>
   <body>
     <div class="ambient ambient-one" aria-hidden="true"></div>
@@ -47,6 +47,7 @@
     </header>
 
     <main>
+      <h1 class="visually-hidden">VR Live – Quest-Livestream ansehen</h1>
       <section class="stream-panel" aria-label="VR-Livestream">
         <div class="player-frame" id="playerFrame" data-player-state="offline">
           <div class="corner corner-tl" aria-hidden="true"></div>
@@ -88,10 +89,11 @@
                 </label>
               </div>
               <p class="access-error" id="accessError" role="alert" hidden></p>
-              <button class="primary-action" id="primaryAction" type="submit">
+              <button class="primary-action" id="primaryAction" type="submit" disabled>
                 <span class="play-symbol" aria-hidden="true"></span>
                 <span id="primaryActionLabel">Stream ansehen</span>
               </button>
+              <button class="control-button connection-cancel" id="connectionCancelButton" type="button" hidden>Verbindung abbrechen</button>
             </form>
           </div>
 
@@ -107,6 +109,10 @@
           >
             <span aria-hidden="true">×</span>
             <span>Vollbild schließen</span>
+          </button>
+          <button id="playerSoundButton" class="player-sound-button" type="button" disabled>
+            <span aria-hidden="true">◖</span>
+            <span id="playerSoundLabel">Ton ausschalten</span>
           </button>
         </div>
 
@@ -132,6 +138,17 @@
           </button>
           <p class="control-note" id="controlNote">Nur ansehen · keine Kamera · kein Mikrofon</p>
         </div>
+        <details id="audioHelp" class="audio-help" hidden>
+          <summary>Kein Spielton?</summary>
+          <p>Aktiviere den Ton erneut. Falls im Videobild ein Wiedergabehinweis erscheint, klicke oder tippe direkt darauf.</p>
+          <button id="retrySoundButton" class="control-button" type="button" disabled>Ton erneut aktivieren</button>
+          <p>Bleibt es still, muss der Sender den Ton im Meta-Casting-Player einschalten und beim Teilen des Chrome-Tabs „Tab-Audio teilen“ aktivieren. Prüfe auch die Lautstärke deines Geräts.</p>
+        </details>
+        <p class="connection-disclosure">
+          Beim Start verbindet sich dein Browser mit VDO.Ninja und dem Sender.
+          Bei einer Direktverbindung sind die öffentlichen IP-Adressen füreinander sichtbar.
+          Deine Kamera und dein Mikrofon bleiben aus.
+        </p>
       </section>
 
     </main>
