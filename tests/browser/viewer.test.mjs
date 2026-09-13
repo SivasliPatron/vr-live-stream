@@ -41,7 +41,7 @@ for (const engine of [chromium, webkit]) {
           if (config && url.pathname.endsWith("/stream-config.js")) {
             await route.fulfill({ contentType: "text/javascript", body: `export const STREAM_CONFIG = ${JSON.stringify(config)};` });
           } else await route.continue();
-        } else if (url.origin === "https://vdo.ninja") {
+        } else if (url.origin === new URL(STREAM_CONFIG.viewerBaseUrl).origin) {
           requests.push(url);
           await route.fulfill({ contentType: "text/html", body: fixture });
         } else {
@@ -133,11 +133,11 @@ for (const engine of [chromium, webkit]) {
     test("Fremde Nachrichten und defekte Health-Daten erzeugen keinen falschen Status", async (t) => {
       const { page } = await open(t);
       const frame = await start(page);
-      await page.evaluate((streamID) => {
+      await page.evaluate(({ streamID, origin }) => {
         const data = { action: "new-video-track-added", value: true, streamID };
-        dispatchEvent(new MessageEvent("message", { origin: "https://vdo.ninja", source: window, data }));
+        dispatchEvent(new MessageEvent("message", { origin, source: window, data }));
         dispatchEvent(new MessageEvent("message", { origin: "https://example.invalid", source: document.querySelector("iframe[data-active-player]").contentWindow, data }));
-      }, STREAM_CONFIG.streamId);
+      }, { streamID: STREAM_CONFIG.streamId, origin: new URL(STREAM_CONFIG.viewerBaseUrl).origin });
       await send(frame, { action: "new-video-track-added", value: true, streamID: "different-stream" });
       await state(page, "connecting");
       await live(page, frame);

@@ -16,6 +16,7 @@ window.ready = true;
 const activeSelector = '#playerSlot iframe[data-active-player="true"]';
 const timeoutMs = 60_000;
 const playerLoadTimeoutMs = 90_000;
+const viewerOrigin = new URL(STREAM_CONFIG.viewerBaseUrl).origin;
 let server;
 let baseUrl;
 let messageSequence = 0;
@@ -41,7 +42,7 @@ for (const engine of [chromium, webkit]) {
         const url = new URL(route.request().url());
         if (url.origin === new URL(baseUrl).origin) {
           await route.continue();
-        } else if (url.origin === "https://vdo.ninja") {
+        } else if (url.origin === viewerOrigin) {
           requests.push(url);
           await route.fulfill({ contentType: "text/html", body: fixture });
         } else {
@@ -60,11 +61,11 @@ for (const engine of [chromium, webkit]) {
       await page.waitForFunction(() => document.querySelector("#primaryAction").dataset.hint);
       // Acknowledge delivery after the production message listener has run.
       // Cross-process WebKit delivery need not finish after one clock tick.
-      await page.evaluate(() => addEventListener("message", (event) => {
-        if (event.origin === "https://vdo.ninja" && event.data?.__fixtureMessageId) {
+      await page.evaluate((origin) => addEventListener("message", (event) => {
+        if (event.origin === origin && event.data?.__fixtureMessageId) {
           window.__lastFixtureMessageId = event.data.__fixtureMessageId;
         }
-      }));
+      }), viewerOrigin);
       await page.clock.install(clockTime === undefined ? {} : { time: new Date(clockTime) });
       return { page, context, requests };
     }
@@ -123,6 +124,121 @@ for (const engine of [chromium, webkit]) {
         return frame && new URL(frame.src).searchParams.has("relay") === relay;
       }, { selector: activeSelector, relay: expected });
     }
+
+    async function decoded(page, frame, frames = 60, bytes = 6000) {
+      await send(page, frame, { cib: "health", stats: { inbound: {
+        [STREAM_CONFIG.streamId]: {
+          _bytesReceived_video: bytes,
+          video: { _type: "video", _framesDecoded: frames, _last_bytes: bytes },
+        },
+      } } });
+    }
+
+    test("Eingefrorene Bilder trotz steigender Bytes: ein Bild anfordern, dann einmal neu verbinden", async (t) => {
+      const { page, requests } = await open(t);
+      const { frame } = await start(page);
+      assert.equal(requests[0].origin, viewerOrigin);
+      assert.equal(requests[0].searchParams.get("salt"), "vdo.ninja");
+      assert.equal(requests[0].searchParams.get("iframetarget"), new URL(baseUrl).origin);
+      await decoded(page, frame);
+      await state(page, "live");
+      await page.locator("#soundButton").click();
+      for (let index = 1; index <= 6; index++) {
+        await page.clock.runFor(2000);
+        await decoded(page, frame, 60, 6000 + index * 1000);
+      }
+      assert.equal(await page.locator("#statusLabel").textContent(), "NEU VERBINDEN");
+      assert.equal(requests.length, 1, "Kurzer Hänger zerstört den Player nicht");
+      assert.equal(await frame.evaluate(() => commands.filter(command => command.sendRequest?.keyframe).length), 1);
+      for (let index = 7; index <= 15; index++) {
+        await page.clock.runFor(2000);
+        await decoded(page, frame, 60, 6000 + index * 1000);
+      }
+      await state(page, "offline");
+      await page.clock.runFor(3001);
+      await state(page, "connecting");
+      const replacement = await active(page);
+      assert.equal(requests.length, 2);
+      assert.equal(requests[1].searchParams.get("mutespeaker"), "1");
+      const replacementUrl = new URL(await page.locator(activeSelector).getAttribute("src"));
+      assert.equal(new URLSearchParams(replacementUrl.hash.slice(1)).get("password"), "0042");
+      await decoded(page, replacement.frame, 2, 1000);
+      await state(page, "live");
+    });
+
+    test("Neue Bilder beenden die Hängerwarnung ohne Playerwechsel", async (t) => {
+      const { page, requests } = await open(t);
+      const { frame } = await start(page);
+      await decoded(page, frame);
+      await state(page, "live");
+      for (let index = 0; index < 7; index++) {
+        await page.clock.runFor(2000);
+        await decoded(page, frame);
+      }
+      assert.equal(await page.locator("#statusLabel").textContent(), "NEU VERBINDEN");
+      await decoded(page, frame, 61, 7000);
+      assert.equal(await page.locator("#statusLabel").textContent(), "LIVE");
+      for (let index = 0; index < 20; index++) {
+        await page.clock.runFor(2000);
+        await decoded(page, frame, 62 + index, 8000 + index * 1000);
+      }
+      assert.equal(requests.length, 1);
+      assert.equal(await frame.evaluate(() => commands.filter(command => command.sendRequest?.keyframe).length), 1);
+    });
+
+    test("Fehlende Statistiken und Hintergrundzeit bestätigen keinen Videostillstand", async (t) => {
+      const { page, requests } = await open(t);
+      const { frame } = await start(page);
+      await decoded(page, frame);
+      await state(page, "live");
+      await page.clock.runFor(60_000);
+      await decoded(page, frame);
+      assert.equal(await page.locator("#statusLabel").textContent(), "LIVE");
+      await page.evaluate(() => {
+        Object.defineProperty(document, "hidden", { configurable: true, value: true });
+        document.dispatchEvent(new Event("visibilitychange"));
+      });
+      for (let index = 0; index < 20; index++) {
+        await page.clock.runFor(2000);
+        await decoded(page, frame);
+      }
+      await page.evaluate(() => {
+        Object.defineProperty(document, "hidden", { configurable: true, value: false });
+        document.dispatchEvent(new Event("visibilitychange"));
+      });
+      await decoded(page, frame);
+      assert.equal(requests.length, 1);
+      assert.equal(await frame.evaluate(() => commands.filter(command => command.sendRequest?.keyframe).length), 0);
+      assert.equal(await page.locator("#statusLabel").textContent(), "LIVE");
+    });
+
+    test("Null dekodierte Bilder werden durch empfangene Bytes nicht zu LIVE", async (t) => {
+      const { page } = await open(t);
+      const { frame } = await start(page);
+      await decoded(page, frame, 0, 10_000);
+      await decoded(page, frame, 0, 20_000);
+      await state(page, "connecting");
+      await decoded(page, frame, 1, 21_000);
+      await state(page, "live");
+    });
+
+    test("Erste Videobilder im Hintergrund beenden die Startfrist ohne Neustart", async (t) => {
+      const { page, requests } = await open(t);
+      const { frame } = await start(page);
+      await page.evaluate(() => {
+        Object.defineProperty(document, "hidden", { configurable: true, value: true });
+        document.dispatchEvent(new Event("visibilitychange"));
+      });
+      await decoded(page, frame, 1);
+      await state(page, "live");
+      for (let index = 0; index < 35; index++) {
+        await page.clock.runFor(2000);
+        await decoded(page, frame, 1);
+      }
+      assert.equal(requests.length, 1);
+      assert.equal(await page.locator("#statusLabel").textContent(), "LIVE");
+      assert.equal(await frame.evaluate(() => commands.filter(command => command.sendRequest?.keyframe).length), 0);
+    });
 
     test("Leere Metadaten und ein Track-Ereignis stoppen den Start-Timeout nicht", async (t) => {
       const { page } = await open(t);

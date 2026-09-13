@@ -5,11 +5,19 @@ export const CONNECTION_MODE = Object.freeze({
 
 const SCREENSHARE_BITRATE_KBPS = "6000";
 const PLAYOUT_BUFFER_MS = "200";
+// Public credentials of VDO's built-in German TLS fallback, not sender secrets.
+// Explicit configuration avoids VDO's unbounded TURN-list download retry.
+const VDO_FALLBACK_TURN = "steve;setupYourOwnPlease;turns:turn.obs.ninja:443";
+
+export function isTrustedViewerBaseUrl(value) {
+  return value === "https://vdo.ninja/" ||
+    value === "https://steveseguin.github.io/vdo.ninja/";
+}
 
 export function buildViewerUrl(
   config,
   mode = CONNECTION_MODE.direct,
-  { accessCode = "", muted = false } = {},
+  { accessCode = "", muted = false, parentOrigin = "" } = {},
 ) {
   const url = new URL(config.viewerBaseUrl);
   // Treat this as a base address, never as a reusable sender/viewer invitation.
@@ -18,6 +26,12 @@ export function buildViewerUrl(
   url.hash = "";
   url.searchParams.set("view", config.streamId);
   url.searchParams.set("audience", config.audienceToken);
+  // Keep the production sender's password/stream hashing on the official mirror.
+  url.searchParams.set("salt", "vdo.ninja");
+  url.searchParams.set("turn", VDO_FALLBACK_TURN);
+  if (/^https?:\/\//.test(parentOrigin)) {
+    url.searchParams.set("iframetarget", new URL(parentOrigin).origin);
+  }
   url.searchParams.set("cleanoutput", "");
   url.searchParams.set("screensharestereo", "");
   url.searchParams.set("screensharebitrate", SCREENSHARE_BITRATE_KBPS);

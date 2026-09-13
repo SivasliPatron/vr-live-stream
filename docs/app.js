@@ -1,4 +1,4 @@
-import { STREAM_CONFIG } from "./stream-config.js?v=20260913-load-1";
+import { STREAM_CONFIG } from "./stream-config.js?v=20260913-stall-1";
 import {
   getHealthStatsStatus,
   getTargetVideoStats,
@@ -7,7 +7,8 @@ import {
   nextConfirmedMissingCount,
   normalizeConnectionState,
 } from "./player-health.js?v=20260905-connect-1";
-import { buildViewerUrl, CONNECTION_MODE } from "./viewer-url.js?v=20260905-connect-1";
+import { buildViewerUrl, CONNECTION_MODE, isTrustedViewerBaseUrl } from "./viewer-url.js?v=20260913-stall-1";
+import { createVideoProgressMonitor } from "./video-progress.js?v=20260913-stall-1";
 import {
   getPreferredConnectionMode,
   getReconnectDelay,
@@ -76,7 +77,8 @@ let disconnectTimer = null;
 let reconnectTimer = null;
 let statsTimer = null;
 let confirmedMissingStats = 0;
-let lastVideoStats = null;
+const videoProgress = createVideoProgressMonitor();
+let stallKeyframeRequested = false;
 let retryAttempt = 0;
 const attemptedModes = new Set();
 const retiredPlayers = new Map();
@@ -155,7 +157,7 @@ function handleCredentialEdit() {
 const isConfigured =
   hasUsableValue(STREAM_CONFIG.streamId) &&
   hasUsableValue(STREAM_CONFIG.audienceToken) &&
-  VDO_ORIGIN === "https://vdo.ninja";
+  isTrustedViewerBaseUrl(STREAM_CONFIG.viewerBaseUrl);
 
 elements.playerSlot.removeAttribute("aria-live");
 elements.placeholderText.setAttribute("role", "status");
@@ -628,6 +630,8 @@ function finishRetiringPlayer(source) {
 
 function removePlayer() {
   clearConnectionTimers();
+  videoProgress.reset();
+  stallKeyframeRequested = false;
   const previous = player;
   player = null;
   if (!previous) return;
@@ -807,7 +811,7 @@ function connect({ mode = getPreferredConnectionMode(), continuingCycle = false 
   connectionPhase = "loading";
   updateSoundLabel();
   confirmedMissingStats = 0;
-  lastVideoStats = null;
+  videoProgress.reset();
   recoveringConnection = false;
   elements.playerFrame.dataset.connectionHealth = "stable";
   connectionMode = mode;
@@ -837,6 +841,7 @@ function connect({ mode = getPreferredConnectionMode(), continuingCycle = false 
   player.src = buildViewerUrl(STREAM_CONFIG, connectionMode, {
     accessCode,
     muted,
+    parentOrigin: window.location.origin,
   });
   elements.playerSlot.append(player);
 
@@ -879,26 +884,34 @@ window.addEventListener("message", (event) => {
 
     if (healthStatus === "present") {
       const sample = getTargetVideoStats(message, STREAM_CONFIG.streamId);
-      if (sample) {
-        const progressed = ["framesDecoded", "bytesReceived"].some((key) =>
-          sample[key] !== null && sample[key] > 0 &&
-          (lastVideoStats?.[key] == null || sample[key] > lastVideoStats[key]),
-        );
-        // Auch kleinere Werte übernehmen: Nach Track-Neustart zählen Deltas
-        // von der neuen Basis, statt auf den alten Gesamtwert zu warten.
-        lastVideoStats = {
-          framesDecoded: sample.framesDecoded ?? lastVideoStats?.framesDecoded ?? null,
-          bytesReceived: sample.bytesReceived ?? lastVideoStats?.bytesReceived ?? null,
-        };
-        if (progressed) markLive();
+      if (document.hidden) {
+        videoProgress.suspend();
+      }
+      const progress = videoProgress.observe(sample, performance.now());
+      if (progress.progressed) {
+        stallKeyframeRequested = false;
+        markLive();
+      } else if (!document.hidden && state === "live" && progress.status === "recovering") {
+        showRecoveringState();
+        elements.controlNote.textContent = "Keine neuen Videobilder · Wiederherstellung wird versucht";
+        if (!stallKeyframeRequested) {
+          // Viewer-to-sender request, not VDO's publisher-side scene command.
+          sendToPlayer({ sendRequest: { keyframe: true } });
+          stallKeyframeRequested = true;
+        }
+      } else if (!document.hidden && state === "live" && progress.status === "stalled") {
+        markOffline();
       }
     } else if (healthStatus === "missing" && state === "live") {
+      videoProgress.suspend();
       if (confirmedMissingStats >= 2) {
         showRecoveringState();
       }
       if (confirmedMissingStats >= MAX_CONFIRMED_MISSING_STATS) {
         markOffline();
       }
+    } else {
+      videoProgress.suspend();
     }
     return;
   }
@@ -1003,6 +1016,8 @@ window.addEventListener("online", () => {
 });
 
 document.addEventListener("visibilitychange", () => {
+  videoProgress.suspend();
+  if (!document.hidden && state === "live") requestStats();
   if (!document.hidden && viewerStarted && state === "offline" && !manualRetryRequired) {
     connect();
   }

@@ -12,6 +12,10 @@ Meta Quest → Meta-Casting im Chrome-Tab → VDO.Ninja → GitHub-Zuschauer-Sei
 
 GitHub Pages liefert nur die Website aus. Bild und Spielton werden von VDO.Ninja über WebRTC übertragen, direkt oder bei Bedarf über einen Relay-Server.
 
+Der Zuschauer-Player verwendet die [offizielle GitHub-Ausweichseite von VDO.Ninja](https://docs.vdo.ninja/help/fail-safes-and-backups), weil die Hauptseite hier wiederholt unvollständige Skript-Downloads lieferte. `salt=vdo.ninja` erhält die Zuordnung zum unveränderten Sender und seinem Zugangscode. Der Code bleibt im URL-Fragment; der Sender muss nicht neu eingerichtet werden.
+
+Die [TURN-Konfiguration](https://docs.vdo.ninja/advanced-settings/turn-and-stun-parameters/turn) wählt den bereits in VDO enthaltenen deutschen TLS-Ausweichserver vorab aus. So hängt der Start nicht am erneuten, unbegrenzten Download der automatischen Relay-Serverliste. Direkte Verbindungen bleiben erlaubt; nur der Relay-Ausweichweg ist auf diesen Server festgelegt. Das ersetzt keine Internetverbindung und entlastet den Sender nicht von mehreren Zuschauern.
+
 Der öffentliche Link allein reicht nicht zum Zuschauen: Für jede normale 720p/60-Sitzung wird lokal ein neuer zufälliger vierstelliger Zugangscode erzeugt. Wer den aktuellen Code kennt, kann direkt zuschauen; der Sender muss keine Anfrage bestätigen.
 
 Die Zuschauer-Verbindung fordert 6.000 kbit/s für den bewegungsreichen 720p/60-Stream an und nutzt in unterstützten Browsern einen kleinen 200-ms-Wiedergabepuffer. Dadurch werden kurze Netzwerkschwankungen geglättet. Der erzwungene VDO-Relay-Weg kann die Videobitrate dienstseitig auf 4.000 kbit/s begrenzen; die angeforderten 6.000 kbit/s sind dort keine Zusicherung.
@@ -65,6 +69,8 @@ Nach einem bereits bestätigten Livebild bleibt die automatische Wiederverbindun
 
 **LIVE** erscheint erst, wenn Videodaten bestätigt sind. Leere Statistik-Einträge und das bloße Anlegen eines Videotracks reichen nicht aus. Bei einem gemeldeten Verbindungsabbruch bleiben höchstens 15 Sekunden für die interne Wiederherstellung. Neue Videodaten beenden diese Schonfrist; unveränderte Einträge verlängern sie nicht. Alte Player werden beim Wechsel stummgeschaltet und zum Auflegen aufgefordert, bevor sie entfernt werden. Beim vollständigen Schließen eines Browsers ist die Zustellung dieser Nachricht nicht garantiert.
 
+Sind dekodierte Bildzähler verfügbar, haben sie Vorrang vor empfangenen Bytes: Daten allein können einen eingefrorenen Decoder nicht als gesund ausgeben. Nach 12 Sekunden fortlaufend bestätigtem Stillstand zeigt die Seite die Wiederherstellung an und fordert einmal ein vollständiges Videobild an. Erst nach 30 Sekunden bestätigtem Stillstand wird der Player neu verbunden. Neue Bilder beenden die Warnung ohne Neustart. Fehlende/defekte Statistiken, längere Messpausen und Hintergrundzeit zählen nicht als bestätigter Stillstand; tatsächlicher Bildempfang im Hintergrund beendet trotzdem die Startfrist.
+
 ## Sicherheit und Grenzen
 
 - Publisher-Token, vollständige Sender-Links und aktueller Zugangscode bleiben ausschließlich im lokalen, ignorierten `.private`-Ordner.
@@ -76,6 +82,7 @@ Nach einem bereits bestätigten Livebild bleibt die automatische Wiederverbindun
 - Die frühere Drei-Zuschauer-Sperre wurde auf sechs gleichzeitige Verbindungsslots angehoben. Das gibt den vorgesehenen 1–3 Zuschauern Reserve für Wiederverbindungen, ohne den Sender unbegrenzt zu belasten.
 - Bei schwierigen WLAN-, Mobilfunk- oder Firewall-Netzen versucht die Zuschauer-Seite automatisch beide Wege: direkt und über einen Relay-Server.
 - Drei Zuschauer können zusammen rund 18 Mbit/s Video-Upload plus Reserve benötigen. Für volle 720p/60-Qualität sollte der Sender-PC deshalb stabil etwa 25 Mbit/s Upload erreichen.
+- Vier Zuschauer können bei der angeforderten Datenrate zusammen etwa 24 Mbit/s, sechs etwa 36 Mbit/s Video-Upload benötigen, jeweils zuzüglich Ton und Netzwerk-Overhead. Das sind Zielwerte, keine Messung oder garantierte Bitrate. Der PC muss zusätzlich alle Übertragungen verarbeiten; ein Relay verteilt den Stream nicht einmalig an alle Zuschauer.
 - Es gibt in V1 keine Aufnahme, Benutzerkonten, dauerhafte personenbezogene Sperrliste oder eigene Domain.
 
 ## Lokale Prüfung

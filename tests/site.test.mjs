@@ -103,6 +103,8 @@ test("schwierige Netze erhalten automatische Wiederherstellung und Relay-Fallbac
 
   assert.equal(directUrl.searchParams.get("view"), STREAM_CONFIG.streamId);
   assert.equal(directUrl.searchParams.get("audience"), STREAM_CONFIG.audienceToken);
+  assert.equal(directUrl.searchParams.get("turn"), "steve;setupYourOwnPlease;turns:turn.obs.ninja:443");
+  assert.equal(compatibilityUrl.searchParams.get("turn"), directUrl.searchParams.get("turn"));
   assert.equal(directUrl.searchParams.get("autorecover"), "1");
   assert.equal(directUrl.searchParams.get("autorelay"), "1");
   assert.equal(directUrl.searchParams.get("mutespeaker"), "0");
@@ -288,7 +290,8 @@ test("öffentliche Stream-Konfiguration ist vollständig", () => {
   assert.doesNotMatch(config, /PENDING_STREAM_ID/);
   assert.doesNotMatch(config, /PENDING_AUDIENCE_TOKEN/);
   assert.doesNotMatch(config, /accessCode|password/i);
-  assert.match(config, /viewerBaseUrl: "https:\/\/vdo\.ninja\/"/);
+  assert.equal(STREAM_CONFIG.viewerBaseUrl, "https://steveseguin.github.io/vdo.ninja/");
+  assert.match(read("docs/index.html"), /frame-src https:\/\/vdo\.ninja https:\/\/steveseguin\.github\.io\/vdo\.ninja\//);
 });
 
 test("keine Sender-URL, Publisher-Tokens oder Sitzungscodes können committed werden", () => {
