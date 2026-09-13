@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#101018">
+  <meta name="referrer" content="no-referrer">
+  <meta name="description" content="Dein privater Quest-Livestream. Code eingeben und zuschauen.">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; frame-src https://steveseguin.github.io/vdo.ninja/; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
+  <title>VR Live</title>
+  <link rel="stylesheet" href="./style.css?v=2">
+  <script type="module" src="./viewer.js?v=2"></script>
+</head>
+<body>
+  <main class="shell">
+    <header class="topbar">
+      <h1><span class="brand-icon" aria-hidden="true">VR</span> LIVE</h1>
+      <p id="status" class="status" data-state="idle" role="status"><span aria-hidden="true"></span><strong id="statusText">OFFLINE</strong></p>
+    </header>
+
+    <section id="stage" class="stage" aria-label="VR-Videoplayer">
+      <div id="screen" class="screen"></div>
+      <div id="welcome" class="welcome">
+        <span class="play-shape" aria-hidden="true">▷</span>
+        <h2>Bereit zum Zuschauen</h2>
+        <p>Gib unten den aktuellen Code ein.</p>
+      </div>
+      <button id="exitFull" class="exit-full" type="button" aria-label="Vollbild schließen" hidden>✕</button>
+    </section>
+
+    <section class="controls" aria-label="Stream bedienen">
+      <form id="joinForm" novalidate>
+        <label for="code">Zugangscode</label>
+        <div class="join-row">
+          <input id="code" name="code" type="text" inputmode="numeric" pattern="[0-9]{4}" maxlength="4" autocomplete="off" spellcheck="false" placeholder="0000" aria-describedby="notice">
+          <button id="join" class="primary" type="submit">Stream ansehen <span aria-hidden="true">→</span></button>
+        </div>
+      </form>
+      <div class="actions">
+        <button id="sound" type="button" disabled aria-pressed="true">Ton an</button>
+        <button id="fullscreen" type="button" disabled aria-controls="stage">Vollbild</button>
+        <button id="reconnect" type="button" disabled>Neu verbinden</button>
+        <button id="stop" class="subtle" type="button" hidden>Beenden</button>
+      </div>
+    </section>
+    <p id="notice" class="notice" aria-live="polite">Nur zuschauen. Kamera und Mikrofon bleiben aus.</p>
+    <noscript><p>Bitte JavaScript aktivieren, um den Stream anzusehen.</p></noscript>
+  </main>
+</body>
+</html>

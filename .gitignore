@@ -1,0 +1,6 @@
+.private/
+node_modules/
+test-results/
+*.log
+*.lnk
+START-HIER.txt
