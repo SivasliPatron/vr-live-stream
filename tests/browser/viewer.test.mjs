@@ -73,7 +73,17 @@ for (const engine of [chromium, webkit]) {
       const frame = await page.locator("#playerSlot iframe[data-active-player]").elementHandle();
       const content = await frame.contentFrame();
       await content.waitForFunction(() => Array.isArray(window.commands));
+      await send(content, { cib: "health", stats: { inbound: {} } });
+      await page.waitForFunction(() => document.querySelector("#playerFrame").dataset.connectionPhase === "signaling");
       return content;
+    }
+
+    async function reportActivePlayerReady(page) {
+      const handle = await page.locator("iframe[data-active-player]").elementHandle();
+      const frame = await handle.contentFrame();
+      await frame.waitForFunction(() => Array.isArray(window.commands));
+      await send(frame, { cib: "health", stats: { inbound: {} } });
+      await page.waitForFunction(() => document.querySelector("#playerFrame").dataset.connectionPhase === "signaling");
     }
     async function send(frame, data) {
       await frame.evaluate((message) => parent.postMessage(message, "*"), data);
@@ -142,15 +152,18 @@ for (const engine of [chromium, webkit]) {
       await page.waitForFunction(() => document.querySelector("#statusLabel").textContent === "LIVE");
     });
 
-    test("Direkt-Timeout, Relay, Wiederholung und Abbruch durch Codeänderung", async (t) => {
+    test("Direkt-Timeout, Relay, manueller Neustart und Abbruch durch Codeänderung", async (t) => {
       const { page } = await open(t);
       await page.clock.install();
       await start(page);
       await page.clock.fastForward(STREAM_CONFIG.connectTimeoutMs + 1);
       await page.waitForFunction(() => new URL(document.querySelector("iframe[data-active-player]").src).searchParams.has("relay"));
+      await reportActivePlayerReady(page);
       await page.clock.fastForward(STREAM_CONFIG.connectTimeoutMs + 1);
       await state(page, "offline");
-      await page.clock.fastForward(STREAM_CONFIG.reconnectDelayMs + 1);
+      await page.clock.fastForward(180_000);
+      await state(page, "offline");
+      await page.locator("#primaryAction").click();
       await state(page, "connecting");
       assert.equal(await page.locator("iframe[data-active-player]").evaluate((element) => new URL(element.src).searchParams.has("relay")), false);
       await page.locator("#accessCodeInput").fill("0043");
@@ -194,8 +207,10 @@ for (const engine of [chromium, webkit]) {
       await state(page, "offline");
       await context.setOffline(false);
       await state(page, "connecting");
+      await reportActivePlayerReady(page);
       await page.clock.fastForward(STREAM_CONFIG.connectTimeoutMs + 1);
       await page.waitForFunction(() => new URL(document.querySelector("iframe[data-active-player]").src).searchParams.has("relay"));
+      await reportActivePlayerReady(page);
       await page.clock.fastForward(STREAM_CONFIG.connectTimeoutMs + 1);
       await state(page, "offline");
       await page.evaluate(() => Object.defineProperty(document, "hidden", { configurable: true, value: true }));

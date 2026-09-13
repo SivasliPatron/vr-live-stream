@@ -1,5 +1,19 @@
 # Projektprüfung vom 5. September 2026
 
+## Nachprüfung und Verbindungsreparatur vom 13. September 2026
+
+Erneut geprüft wurden alle 26 versionierten Projektdateien, alle 12 Dateien unter `.private` einschließlich der dortigen fünf Verknüpfungen sowie die fünf Verknüpfungen und `START-HIER.txt` im Projekt-Hauptordner. Installierte Fremdpakete, Git-interne Objekte und erzeugte Testartefakte wurden nicht als eigener Quellcode geprüft. Die GitHub-Pages-Auslieferung entsprach vor dieser Reparatur dem lokalen Stand; sämtliche öffentlichen Dateien waren vollständig und mit korrekten Inhaltstypen erreichbar. Private und öffentliche Stream-ID/Zuschauer-Tokens sowie lokale Codeanzeige waren konsistent.
+
+**Bestätigter Ablaufdefekt:** Die alte 25-Sekunden-Frist begann schon beim Einfügen des Iframes. Sie ersetzte den Player auch dann, wenn dessen externe Skripte noch luden. In der direkten Browsergegenprobe dauerte der VDO-Start deutlich länger; dessen eigener WebSocket-Handshake hat außerdem ein 30-Sekunden-Zeitfenster. Wiederholtes Ersetzen konnte deshalb den Start selbst verhindern.
+
+**Korrektur:** Player-Laden und Medienverbindung haben getrennte Fristen: bis zu 90 Sekunden für die erste gültige API-Antwort, danach einmalig 60 Sekunden pro Netzwerkweg. Ein bloßes `load`-Ereignis oder eine defekte Antwort bestätigt keine Bereitschaft. Scheitert das Laden, wird kein Relay-Wechsel ausgelöst. Scheitert der erste Beitritt auf beiden Wegen, bleibt eine manuell bedienbare Fehleransicht statt einer Endlosschleife. Nach einem bestätigten Livebild bleibt automatische Wiederverbindung erhalten. Abbrechen, Codeänderung, alte Iframes, Netzwerkwechsel und Seitencache beachten den jeweiligen Zustand. Die Browser-Cache-Versionen für App und Konfiguration wurden erhöht. Bildqualität, Audience-Schutz, Zugangscode und Sender-Token wurden nicht verändert.
+
+**Erneute Tests:** 50/50 Modul-, Server-, Struktur- und Sicherheitstests bestanden. Die vollständige Browserprüfung bestand 56 Fälle; drei WebKit-Audiotests wurden wegen fehlender Web-Audio-Unterstützung übersprungen. Zusätzlich bestanden die isolierten Audience-Helferprüfungen. Die neuen Fälle prüfen unter anderem API-Bereitschaft erst nach 65 Sekunden, unveränderten Player während des Ladens, feste Verbindungsfristen und endgültigen manuellen Stopp über Offline/Online sowie Seitencache hinweg. Diese automatischen Tests verwenden weiterhin simulierte VDO-Nachrichten.
+
+**Echte Gegenprobe und offene Grenze:** Mit ausdrücklicher Freigabe wurde der aktuelle Zuschauerzugang im Browser sowohl über die öffentliche Seite als auch direkt bei VDO.Ninja geprüft; der Sender wurde nicht neu gestartet. Im direkten VDO-Tab wurde nach verzögertem Skriptladen `TypeError: main is not a function` gemeldet. Die lokale reparierte Seite zeigte bei ausbleibender API-Antwort wie vorgesehen „VDO.Ninja konnte nicht geladen werden.“ Ein bewegtes Zuschauerbild und echter Quest-Ton wurden damit noch nicht nachgewiesen. Der beobachtete Fehler im externen Player ist kein Beweis für eine weltweite Dienststörung oder für eine bestimmte lokale Netzwerkursache.
+
+Die Veröffentlichung dieser Reparatur wurde ausdrücklich freigegeben. Die nachfolgenden Abschnitte bleiben als historische Prüfprotokolle erhalten; ihre früheren Zeitgrenzen werden durch die oben beschriebene Korrektur ersetzt.
+
 ## Veröffentlichungsfreigabe vom 13. September 2026
 
 Die vorbereiteten Änderungen sind zur Veröffentlichung auf GitHub Pages freigegeben. Die folgenden Prüfprotokolle beschreiben frühere lokale Prüfungen; Angaben wie „noch nicht veröffentlicht“ beziehen sich auf den damaligen Stand.

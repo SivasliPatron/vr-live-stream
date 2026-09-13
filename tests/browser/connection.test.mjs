@@ -14,9 +14,11 @@ addEventListener('message', event => window.commands.push(event.data));
 window.ready = true;
 </script>`;
 const activeSelector = '#playerSlot iframe[data-active-player="true"]';
-const timeoutMs = 25_000;
+const timeoutMs = 60_000;
+const playerLoadTimeoutMs = 90_000;
 let server;
 let baseUrl;
+let messageSequence = 0;
 
 before(async () => {
   server = createPreviewServer();
@@ -56,15 +58,27 @@ for (const engine of [chromium, webkit]) {
       });
       await page.goto(baseUrl);
       await page.waitForFunction(() => document.querySelector("#primaryAction").dataset.hint);
+      // Acknowledge delivery after the production message listener has run.
+      // Cross-process WebKit delivery need not finish after one clock tick.
+      await page.evaluate(() => addEventListener("message", (event) => {
+        if (event.origin === "https://vdo.ninja" && event.data?.__fixtureMessageId) {
+          window.__lastFixtureMessageId = event.data.__fixtureMessageId;
+        }
+      }));
       await page.clock.install(clockTime === undefined ? {} : { time: new Date(clockTime) });
       return { page, context, requests };
     }
 
-    async function active(page) {
+    async function active(page, { reportReady = true } = {}) {
       const handle = await page.locator(activeSelector).elementHandle();
       assert.ok(handle, "Ein aktiver Player ist vorhanden");
       const frame = await handle.contentFrame();
       await frame.waitForFunction(() => window.ready);
+      if (reportReady) {
+        await send(page, frame, { cib: "health", stats: { inbound: {} } });
+        await page.waitForFunction(() =>
+          document.querySelector("#playerFrame").dataset.connectionPhase === "signaling");
+      }
       return { handle, frame };
     }
 
@@ -73,17 +87,20 @@ for (const engine of [chromium, webkit]) {
         document.querySelector("#playerFrame").dataset.playerState === value, expected);
     }
 
-    async function start(page) {
+    async function start(page, options) {
       await page.locator("#accessCodeInput").fill("0042");
       await page.locator("#primaryAction").click();
       await state(page, "connecting");
-      return active(page);
+      return active(page, options);
     }
 
     async function send(page, frame, message) {
-      await frame.evaluate((data) => parent.postMessage(data, "*"), message);
-      // Deliver queued cross-origin messages before advancing a long deadline.
+      const id = ++messageSequence;
+      await frame.evaluate((data) => parent.postMessage(data, "*"), {
+        ...message, __fixtureMessageId: id,
+      });
       await page.clock.runFor(1);
+      await page.waitForFunction((expected) => window.__lastFixtureMessageId === expected, id);
     }
 
     async function video(page, frame, bytesReceived = 1024) {
@@ -122,7 +139,11 @@ for (const engine of [chromium, webkit]) {
       await active(page);
       await page.clock.fastForward(timeoutMs + 1);
       await state(page, "offline");
-      await page.clock.fastForward(3_001);
+      await page.clock.fastForward(180_000);
+      await state(page, "offline");
+      assert.equal(await page.locator(activeSelector).count(), 0,
+        "Ein fehlgeschlagener Erststart wiederholt sich nicht endlos");
+      await page.locator("#primaryAction").click();
       await state(page, "connecting");
       await assertRelay(page, false);
     });
@@ -142,7 +163,7 @@ for (const engine of [chromium, webkit]) {
         "Der Zugangscode wird nicht gespeichert");
       await first.context.close();
 
-      // A restarted browser inherits wall time, including our simulated 25s.
+      // A restarted browser inherits wall time, including our simulated deadline.
       const second = await open(t, { storageState, clockTime });
       assert.equal(second.requests.length, 0, "Browser-Neustart stellt keine Verbindung ohne Codeeingabe her");
       await start(second.page);
@@ -280,6 +301,98 @@ for (const engine of [chromium, webkit]) {
       await page.waitForFunction(() => document.querySelector("#playerFrame").dataset.connectionHealth === "stable");
       await state(page, "live");
       assert.equal(requests.length, 1);
+    });
+
+    test("Langsames Laden über 25 Sekunden behält den Player bis zur API-Bereitschaft", async (t) => {
+      const { page, requests } = await open(t);
+      const original = await start(page, { reportReady: false });
+      assert.equal(await page.locator("#playerFrame").getAttribute("data-connection-phase"), "loading");
+      await page.clock.fastForward(65_000);
+      assert.equal(requests.length, 1);
+      assert.equal(await original.handle.getAttribute("data-active-player"), "true");
+      await send(page, original.frame, { cib: "health", stats: { inbound: {} } });
+      assert.equal(await page.locator("#playerFrame").getAttribute("data-connection-phase"), "signaling");
+      await page.clock.fastForward(30_000);
+      assert.equal(requests.length, 1, "Der ursprüngliche Lade-Timeout ist aufgehoben");
+      await becomeLive(page, original.frame);
+      assert.equal(await page.locator("#playerFrame").getAttribute("data-connection-phase"), "live");
+    });
+
+    test("Frame-Load und defekte Health-Antworten starten die Medienfrist nicht", async (t) => {
+      const { page, context, requests } = await open(t);
+      const original = await start(page, { reportReady: false });
+      await original.handle.evaluate((element) => element.dispatchEvent(new Event("load")));
+      for (const stats of [{}, { inbound: null }, { error: "unavailable" }]) {
+        await send(page, original.frame, { cib: "health", stats });
+      }
+      await send(page, original.frame, { action: "new-video-track-added", value: true, streamID: "different-stream" });
+      await page.clock.fastForward(timeoutMs + 1);
+      assert.equal(requests.length, 1);
+      assert.equal(await page.locator("#playerFrame").getAttribute("data-connection-phase"), "loading");
+      await page.clock.fastForward(playerLoadTimeoutMs - timeoutMs + 1);
+      await state(page, "offline");
+      assert.equal(await page.locator("#placeholderTitle").textContent(), "VDO.Ninja konnte nicht geladen werden.");
+      await page.clock.fastForward(180_000);
+      assert.equal(requests.length, 1, "Kein Relay-Wechsel oder Endlos-Neuladen bei blockiertem Player");
+      assert.equal(await page.locator(activeSelector).count(), 0);
+      await context.setOffline(true);
+      await page.waitForFunction(() => !navigator.onLine);
+      await context.setOffline(false);
+      await page.waitForFunction(() => navigator.onLine);
+      await page.evaluate(() => {
+        dispatchEvent(new Event("online"));
+        document.dispatchEvent(new Event("visibilitychange"));
+        dispatchEvent(new PageTransitionEvent("pagehide", { persisted: true }));
+        dispatchEvent(new PageTransitionEvent("pageshow", { persisted: true }));
+      });
+      await page.clock.fastForward(180_000);
+      assert.equal(requests.length, 1, "Netzrückkehr und Seitencache umgehen den manuellen Stopp nicht");
+      assert.equal(await page.locator("#placeholderTitle").textContent(), "VDO.Ninja konnte nicht geladen werden.");
+      await page.locator("#primaryAction").click();
+      await state(page, "connecting");
+      await active(page, { reportReady: false });
+      assert.equal(requests.length, 2, "Ein manueller neuer Versuch bleibt möglich");
+    });
+
+    test("Wiederholte Bereitschaftsantworten verlängern die Medienfrist nicht", async (t) => {
+      const { page, context, requests } = await open(t);
+      const original = await start(page, { reportReady: false });
+      await page.clock.fastForward(40_000);
+      await send(page, original.frame, { cib: "health", stats: { inbound: {} } });
+      await page.waitForFunction(() =>
+        document.querySelector("#playerFrame").dataset.connectionPhase === "signaling");
+      for (let index = 0; index < 5; index++) {
+        await page.clock.fastForward(10_000);
+        await send(page, original.frame, { cib: "health", stats: { inbound: {} } });
+      }
+      assert.equal(requests.length, 1);
+      await page.clock.fastForward(10_010);
+      await assertRelay(page, true);
+      await active(page);
+      assert.equal(requests.length, 2);
+      await page.clock.fastForward(timeoutMs + 1);
+      await state(page, "offline");
+      await context.setOffline(true);
+      await page.waitForFunction(() => !navigator.onLine);
+      await context.setOffline(false);
+      await page.waitForFunction(() => navigator.onLine);
+      await page.clock.fastForward(180_000);
+      assert.equal(requests.length, 2, "Beide erfolglosen Startwege enden mit manuellem Neustart");
+    });
+
+    test("Abbrechen und Codeänderung während des Ladens löschen beide Fristen", async (t) => {
+      for (const action of ["cancel", "edit"]) {
+        const { page, requests } = await open(t);
+        await start(page, { reportReady: false });
+        await page.clock.fastForward(35_000);
+        if (action === "cancel") await page.locator("#connectionCancelButton").click();
+        else await page.locator("#accessCodeInput").fill("0043");
+        await state(page, "offline");
+        await page.clock.fastForward(playerLoadTimeoutMs + timeoutMs + 180_000);
+        assert.equal(requests.length, 1);
+        assert.equal(await page.locator("#playerSlot iframe").count(), 0);
+        assert.equal(await page.locator("#accessCodeInput").isEnabled(), true);
+      }
     });
   });
 }

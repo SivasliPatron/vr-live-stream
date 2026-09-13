@@ -1,4 +1,4 @@
-import { STREAM_CONFIG } from "./stream-config.js?v=20260905-connect-1";
+import { STREAM_CONFIG } from "./stream-config.js?v=20260913-load-1";
 import {
   getHealthStatsStatus,
   getTargetVideoStats,
@@ -59,6 +59,10 @@ const PLAYER_RETIRE_TIMEOUT_MS = 1_200;
 const FULLSCREEN_CHANGE_TIMEOUT_MS = 1_200;
 const FULLSCREEN_TOGGLE_COOLDOWN_MS = 450;
 const START_MUTED = false;
+const PLAYER_LOAD_TIMEOUT_MS = Number.isFinite(STREAM_CONFIG.playerLoadTimeoutMs) && STREAM_CONFIG.playerLoadTimeoutMs > 0
+  ? STREAM_CONFIG.playerLoadTimeoutMs : 90_000;
+const CONNECT_TIMEOUT_MS = Number.isFinite(STREAM_CONFIG.connectTimeoutMs) && STREAM_CONFIG.connectTimeoutMs > 0
+  ? STREAM_CONFIG.connectTimeoutMs : 60_000;
 const LIVE_CONTROL_NOTE = "Direkte Zuschauer-Verbindung · keine Kamera · kein Mikrofon";
 const COMPATIBILITY_CONTROL_NOTE =
   "Kompatibilitätsverbindung über Relay · keine Kamera · kein Mikrofon";
@@ -81,6 +85,11 @@ let fullscreenWasActive = false;
 let connectionMode = CONNECTION_MODE.direct;
 let recoveringConnection = false;
 let accessCode = "";
+let connectionPhase = "idle";
+let connectionFailure = "";
+let manualRetryRequired = false;
+let automaticReconnect = false;
+let hasPlayed = false;
 let fullscreenReturnFocus = null;
 let fullscreenRequested = false;
 const fullscreenBackground = new Map();
@@ -125,6 +134,10 @@ function applyViewerCredentialsFromInputs() {
 function handleCredentialEdit() {
   accessCode = elements.accessCodeInput.value.trim();
   viewerStarted = false;
+  hasPlayed = false;
+  connectionFailure = "";
+  manualRetryRequired = false;
+  automaticReconnect = false;
   retryAttempt = 0;
   connectionMode = CONNECTION_MODE.direct;
   clearReconnectTimer();
@@ -465,6 +478,8 @@ function setState(nextState) {
   state = nextState;
   elements.statusPill.dataset.state = nextState;
   elements.playerFrame.dataset.playerState = nextState;
+  elements.playerFrame.dataset.connectionPhase = nextState === "connecting"
+    ? connectionPhase : nextState === "live" ? "live" : "idle";
   elements.playerFrame.setAttribute("aria-busy", String(nextState === "connecting"));
   elements.accessForm.setAttribute("aria-busy", String(nextState === "connecting"));
 
@@ -488,6 +503,17 @@ function setState(nextState) {
   }
 
   if (nextState === "connecting") {
+    if (connectionPhase === "loading") {
+      elements.statusLabel.textContent = "VERBINDEN";
+      elements.placeholderKicker.textContent = "VIDEOPLAYER WIRD GELADEN";
+      elements.placeholderTitle.textContent = "Der Videoplayer wird geladen…";
+      elements.placeholderText.textContent =
+        `VDO.Ninja wird geöffnet. Bei langsamer Verbindung kann das bis zu ${Math.ceil(PLAYER_LOAD_TIMEOUT_MS / 1000)} Sekunden dauern. Du kannst jederzeit abbrechen.`;
+      updatePrimaryAction("Videoplayer wird geladen", "Bitte geöffnet lassen");
+      elements.primaryAction.disabled = true;
+      elements.controlNote.textContent = "VDO.Ninja lädt · noch keine Verbindung zum Sender";
+      return;
+    }
     const compatibilityMode = connectionMode === CONNECTION_MODE.compatibility;
     elements.statusLabel.textContent = "VERBINDEN";
     elements.placeholderKicker.textContent = compatibilityMode
@@ -529,12 +555,34 @@ function setState(nextState) {
     return;
   }
 
+  if (connectionFailure === "player-load") {
+    elements.placeholderKicker.textContent = "VIDEOPLAYER NICHT ERREICHBAR";
+    elements.placeholderTitle.textContent = "VDO.Ninja konnte nicht geladen werden.";
+    elements.placeholderText.textContent =
+      "Der externe Player hat nicht rechtzeitig geantwortet. Der Versuch wurde beendet. Prüfe die Erreichbarkeit von VDO.Ninja und versuche es danach erneut.";
+    updatePrimaryAction("Erneut versuchen", "Videoplayer neu laden");
+    elements.controlNote.textContent = "Laden abgebrochen · kein automatischer Neustart";
+    return;
+  }
+
+  if (connectionFailure === "stream-unreachable" && manualRetryRequired) {
+    elements.placeholderKicker.textContent = "KEIN STREAM EMPFANGEN";
+    elements.placeholderTitle.textContent = "Der Player ist bereit, aber es kommt kein Bild.";
+    elements.placeholderText.textContent =
+      "Beide Netzwerkwege wurden geprüft. Prüfe, ob der Sender noch überträgt und ob du seinen aktuellen Zugangscode verwendest. Es erfolgt kein endloser Neustart.";
+    updatePrimaryAction("Erneut versuchen", "Verbindung neu prüfen");
+    elements.controlNote.textContent = "Kein Bild empfangen · Sender, Zugangscode oder Netzwerk prüfen";
+    return;
+  }
+
   elements.placeholderKicker.textContent = "STREAM OFFLINE";
   elements.placeholderTitle.textContent = viewerStarted
     ? "Der Stream ist gerade nicht erreichbar."
     : "Bereit zum Zuschauen.";
   elements.placeholderText.textContent = viewerStarted
-    ? "Die Seite versucht es automatisch erneut. Prüfe bei Bedarf den aktuellen Zugangscode."
+    ? automaticReconnect
+      ? "Die Seite versucht es automatisch erneut. Prüfe bei Bedarf den aktuellen Zugangscode."
+      : "Prüfe den aktuellen Zugangscode und starte die Verbindung erneut."
     : "Gib den aktuellen vierstelligen Zugangscode ein.";
   updatePrimaryAction(
     viewerStarted ? "Jetzt neu verbinden" : "Stream ansehen",
@@ -543,7 +591,7 @@ function setState(nextState) {
       : "Mit Spielton starten",
   );
   elements.controlNote.textContent = viewerStarted
-    ? "Automatische Wiederverbindung ist aktiv"
+    ? automaticReconnect ? "Automatische Wiederverbindung ist aktiv" : "Verbindung beendet · erneut versuchen möglich"
     : "Nur ansehen · keine Kamera · kein Mikrofon";
 }
 
@@ -551,7 +599,9 @@ function showNetworkOfflineState() {
   elements.placeholderKicker.textContent = "KEINE INTERNETVERBINDUNG";
   elements.placeholderTitle.textContent = "Dieses Gerät ist gerade offline.";
   elements.placeholderText.textContent =
-    viewerStarted
+    manualRetryRequired
+      ? "Verbinde dieses Gerät wieder mit dem Internet. Starte den Stream danach mit Erneut versuchen."
+      : viewerStarted
       ? "Sobald die Internetverbindung zurück ist, versucht die Seite den Stream automatisch erneut."
       : "Du kannst den Code bereits eingeben und den Stream starten, sobald du wieder online bist.";
   updatePrimaryAction("Auf Internet warten", "Automatischer neuer Versuch");
@@ -620,8 +670,12 @@ function scheduleReconnect() {
   }, getReconnectDelay(retryAttempt++, STREAM_CONFIG));
 }
 
-function markOffline({ reconnect = true } = {}) {
+function markOffline({ reconnect = true, failure = "" } = {}) {
   fullscreenRequested = false;
+  connectionFailure = failure;
+  manualRetryRequired = Boolean(failure) && !reconnect;
+  automaticReconnect = reconnect && viewerStarted;
+  connectionPhase = "idle";
   clearReconnectTimer();
   removePlayer();
   confirmedMissingStats = 0;
@@ -643,6 +697,10 @@ function markLive() {
   const focusWasInPlaceholder = elements.playerPlaceholder.contains(document.activeElement);
   const becameLive = state !== "live";
   const recovered = recoveringConnection;
+  connectionPhase = "live";
+  connectionFailure = "";
+  manualRetryRequired = false;
+  hasPlayed = true;
   clearTimer(connectionTimer);
   connectionTimer = null;
   clearTimer(disconnectTimer);
@@ -691,6 +749,32 @@ function requestStats() {
   sendToPlayer({ getStats: true, cib: "health" });
 }
 
+function handleConnectionDeadline() {
+  if (!player || state !== "connecting") return;
+  if (connectionPhase === "loading") {
+    // A relay cannot repair missing scripts. Do not repeatedly discard a cold
+    // player before it has even reached VDO's own 30-second socket handshake.
+    markOffline({ reconnect: false, failure: "player-load" });
+    return;
+  }
+  const nextMode = otherConnectionMode(connectionMode);
+  if (!attemptedModes.has(nextMode)) {
+    connect({ mode: nextMode, continuingCycle: true });
+    return;
+  }
+  // Recover established streams automatically. An unsuccessful first join must
+  // instead leave an actionable error and editable code, not loop indefinitely.
+  markOffline({ reconnect: hasPlayed, failure: "stream-unreachable" });
+}
+
+function markPlayerReady() {
+  if (!player || state !== "connecting" || connectionPhase !== "loading") return;
+  connectionPhase = "signaling";
+  clearTimer(connectionTimer);
+  connectionTimer = window.setTimeout(handleConnectionDeadline, CONNECT_TIMEOUT_MS);
+  setState("connecting");
+}
+
 function connect({ mode = getPreferredConnectionMode(), continuingCycle = false } = {}) {
   if (!isConfigured) {
     setState("offline");
@@ -714,10 +798,13 @@ function connect({ mode = getPreferredConnectionMode(), continuingCycle = false 
   }
 
   viewerStarted = true;
+  manualRetryRequired = false;
+  connectionFailure = "";
   if (!continuingCycle) attemptedModes.clear();
   attemptedModes.add(mode);
   clearReconnectTimer();
   removePlayer();
+  connectionPhase = "loading";
   updateSoundLabel();
   confirmedMissingStats = 0;
   lastVideoStats = null;
@@ -754,19 +841,7 @@ function connect({ mode = getPreferredConnectionMode(), continuingCycle = false 
   elements.playerSlot.append(player);
 
   statsTimer = window.setInterval(requestStats, STATS_INTERVAL_MS);
-  connectionTimer = window.setTimeout(() => {
-    if (state !== "connecting") {
-      return;
-    }
-
-    const nextMode = otherConnectionMode(connectionMode);
-    if (!attemptedModes.has(nextMode)) {
-      connect({ mode: nextMode, continuingCycle: true });
-      return;
-    }
-
-    markOffline();
-  }, STREAM_CONFIG.connectTimeoutMs);
+  connectionTimer = window.setTimeout(handleConnectionDeadline, PLAYER_LOAD_TIMEOUT_MS);
 }
 
 window.addEventListener("message", (event) => {
@@ -788,6 +863,7 @@ window.addEventListener("message", (event) => {
   if (event.source !== player?.contentWindow) return;
 
   if (isTargetVideoEvent(message, STREAM_CONFIG.streamId)) {
+    markPlayerReady();
     // Track-Erstellung beweist noch keinen Empfang. Erst Videodaten zählen.
     requestStats();
     return;
@@ -795,6 +871,7 @@ window.addEventListener("message", (event) => {
 
   const healthStatus = getHealthStatsStatus(message, STREAM_CONFIG.streamId);
   if (healthStatus !== "unrelated") {
+    if (healthStatus === "present" || healthStatus === "missing") markPlayerReady();
     confirmedMissingStats = nextConfirmedMissingCount(
       confirmedMissingStats,
       healthStatus,
@@ -830,6 +907,8 @@ window.addEventListener("message", (event) => {
     ["push-connection", "view-connection"].includes(message.action) &&
     isSameStreamId(message.streamID ?? message.streamId, STREAM_CONFIG.streamId);
   const connectionState = normalizeConnectionState(message.value);
+
+  if (isTargetConnectionEvent && connectionState !== null) markPlayerReady();
 
   if (isTargetConnectionEvent && connectionState === true) {
     requestStats();
@@ -912,11 +991,11 @@ document.addEventListener("keydown", (event) => {
 });
 
 window.addEventListener("offline", () => {
-  markOffline({ reconnect: false });
+  markOffline({ reconnect: false, failure: manualRetryRequired ? connectionFailure : "" });
 });
 
 window.addEventListener("online", () => {
-  if (viewerStarted && state === "offline") {
+  if (viewerStarted && state === "offline" && !manualRetryRequired) {
     connect();
   } else {
     setState(state);
@@ -924,18 +1003,18 @@ window.addEventListener("online", () => {
 });
 
 document.addEventListener("visibilitychange", () => {
-  if (!document.hidden && viewerStarted && state === "offline") {
+  if (!document.hidden && viewerStarted && state === "offline" && !manualRetryRequired) {
     connect();
   }
 });
 
 window.addEventListener("pagehide", () => {
   setFallbackFullscreen(false, { moveFocus: false });
-  markOffline({ reconnect: false });
+  markOffline({ reconnect: false, failure: manualRetryRequired ? connectionFailure : "" });
 });
 
 window.addEventListener("pageshow", (event) => {
-  if (event.persisted && viewerStarted) connect();
+  if (event.persisted && viewerStarted && !manualRetryRequired) connect();
 });
 
 updateSoundLabel();

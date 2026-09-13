@@ -27,8 +27,9 @@ test("Beide Verbindungswege haben einen jeweils anderen Rueckfall", () => {
   assert.equal(otherConnectionMode(CONNECTION_MODE.compatibility), CONNECTION_MODE.direct);
 });
 
-test("Fehlversuche beginnen schnell und bekommen eine begrenzte wachsende Pause", () => {
-  assert.equal(STREAM_CONFIG.connectTimeoutMs, 25000);
+test("Playerstart und Verbindung haben getrennte Zeitfenster; Wiederholungen eine begrenzte Pause", () => {
+  assert.equal(STREAM_CONFIG.playerLoadTimeoutMs, 90_000);
+  assert.equal(STREAM_CONFIG.connectTimeoutMs, 60_000);
   assert.deepEqual(
     [0, 1, 2, 3, 4, 100000].map((attempt) => getReconnectDelay(attempt, STREAM_CONFIG)),
     [3000, 6000, 12000, 20000, 20000, 20000],

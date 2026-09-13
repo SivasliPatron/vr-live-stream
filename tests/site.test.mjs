@@ -120,7 +120,8 @@ test("schwierige Netze erhalten automatische Wiederherstellung und Relay-Fallbac
     const mutedUrl = new URL(buildViewerUrl(STREAM_CONFIG, mode, { muted: true }));
     assert.equal(mutedUrl.searchParams.get("mutespeaker"), "1");
   }
-  assert.equal(STREAM_CONFIG.connectTimeoutMs, 25_000);
+  assert.equal(STREAM_CONFIG.playerLoadTimeoutMs, 90_000);
+  assert.equal(STREAM_CONFIG.connectTimeoutMs, 60_000);
   assert.equal(STREAM_CONFIG.reconnectDelayMs, 3_000);
   assert.equal(STREAM_CONFIG.maxReconnectDelayMs, 20_000);
   assert.match(app, /getTargetVideoStats/);
