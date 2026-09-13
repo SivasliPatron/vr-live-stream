@@ -2,12 +2,13 @@ import { channel } from "./channel.js?v=2";
 import { transport, codeIsValid, identityIsValid, streamUrl, videoSample, sampleAdvanced } from "./protocol.js?v=2";
 
 const $ = id => document.getElementById(id);
-const ui = Object.fromEntries(["status","statusText","screen","stage","welcome","joinForm","code","join","sound","fullscreen","exitFull","reconnect","stop","notice"].map(id => [id,$(id)]));
+const ui = Object.fromEntries(["status","statusText","screen","stage","welcome","joinForm","code","join","sound","fullscreen","fullscreenHelp","exitFull","reconnect","stop","notice"].map(id => [id,$(id)]));
 const origin = new URL(transport.base).origin;
 const labels = { idle:"OFFLINE", offline:"OFFLINE", loading:"PLAYER LÄDT", waiting:"VERBINDEN", live:"LIVE", recovering:"NEU VERBINDEN", error:"KEIN BILD" };
 let frame = null, poll = null, generation = 0, phase = "idle", muted = false;
 let started = 0, readyAt = null, lastProgress = 0, lastSample = null, hasVideo = false, nudgeAt = 0;
-let fullPending = false, fullRequested = false, fullToken = 0;
+let fullPending = false, fullRequested = false, stageOwned = false, fullToken = 0;
+let cancelFullRequest = null;
 const background = new Map();
 
 function state(next, message) {
@@ -104,15 +105,17 @@ window.addEventListener("message", event => {
   if (lastSample?.frames == null || sample.frames !== null || (sample.fps !== null && sample.stamp !== null)) lastSample = sample;
 });
 
-function fullscreenActive() { return document.fullscreenElement === ui.stage || document.webkitFullscreenElement === ui.stage || ui.stage.classList.contains("window-full"); }
+function fullscreenElement() { return document.fullscreenElement ?? document.webkitFullscreenElement ?? null; }
+function fullscreenActive() { const element = fullscreenElement(); return element === ui.stage || Boolean(frame && element === frame); }
 function fullUi() {
   const active = Boolean(frame) && fullscreenActive();
-  ui.exitFull.hidden = !active;
+  // A fullscreen iframe cannot display its parent's sibling exit button.
+  ui.exitFull.hidden = !active || fullscreenElement() !== ui.stage;
   ui.fullscreen.setAttribute("aria-pressed", String(active));
   if (active && !background.size) {
-    for (const node of document.querySelectorAll(".topbar,.controls,#notice")) { background.set(node,node.inert); node.inert = true; }
+    for (const node of document.querySelectorAll(".topbar,.controls,#notice,#fullscreenHelp")) { background.set(node,node.inert); node.inert = true; }
     ui.stage.setAttribute("role","dialog"); ui.stage.setAttribute("aria-modal","true");
-    ui.exitFull.focus({ preventScroll:true });
+    if (!ui.exitFull.hidden) ui.exitFull.focus({ preventScroll:true });
   } else if (!active) {
     for (const [node,inert] of background) node.inert = inert;
     const restore = background.size > 0; background.clear();
@@ -121,36 +124,69 @@ function fullUi() {
   }
 }
 async function exitFull() {
-  fullRequested = false; fullToken++; fullPending = false;
-  ui.stage.classList.remove("window-full"); document.body.classList.remove("full");
-  if (document.fullscreenElement || document.webkitFullscreenElement) {
+  fullRequested = false; stageOwned = false; fullToken++; fullPending = false;
+  cancelFullRequest?.();
+  fullUi();
+  const element = fullscreenElement();
+  if (element === ui.stage || (element && ui.screen.contains(element))) {
     try {
       const exit = document.exitFullscreen ?? document.webkitExitFullscreen;
       if (exit) await Promise.race([Promise.resolve(exit.call(document)), new Promise(resolve => setTimeout(resolve,1200))]);
-    } catch { /* Window mode remains usable. */ }
+    } catch { /* Native Escape remains available; the exit button can be retried. */ }
   }
   fullUi();
 }
 async function enterFull() {
   if (!frame || fullPending) return;
   if (fullscreenActive()) { await exitFull(); return; }
-  fullPending = true; fullRequested = true;
+  const standard = typeof ui.stage.requestFullscreen === "function";
+  const request = standard ? ui.stage.requestFullscreen : ui.stage.webkitRequestFullscreen;
+  const enabled = standard ? document.fullscreenEnabled : document.webkitFullscreenEnabled;
+  if (typeof request !== "function" || enabled === false) { ui.fullscreenHelp.hidden = false; return; }
+  fullPending = true; fullRequested = true; stageOwned = false;
+  ui.fullscreenHelp.hidden = true;
   const token = ++fullToken;
-  try {
-    const request = ui.stage.requestFullscreen ?? ui.stage.webkitRequestFullscreen;
-    if (request) await Promise.race([Promise.resolve(request.call(ui.stage)), new Promise(resolve => setTimeout(resolve,1200))]);
-  } catch { /* Browser denies native fullscreen: use the whole window. */ }
-  if (token !== fullToken || !fullRequested || !frame) return;
-  if (!fullscreenActive()) { ui.stage.classList.add("window-full"); document.body.classList.add("full"); }
+  const entered = await new Promise(resolve => {
+    let timer;
+    const finish = success => {
+      clearTimeout(timer);
+      document.removeEventListener("fullscreenchange", changed);
+      document.removeEventListener("webkitfullscreenchange", changed);
+      if (cancelFullRequest === cancel) cancelFullRequest = null;
+      resolve(success);
+    };
+    const cancel = () => finish(false);
+    const changed = () => { if (fullscreenElement() === ui.stage) finish(true); };
+    cancelFullRequest = cancel;
+    document.addEventListener("fullscreenchange", changed);
+    document.addEventListener("webkitfullscreenchange", changed);
+    timer = setTimeout(cancel,5000);
+    try {
+      // Must stay in the click's activation; never wait before this call.
+      const result = standard ? request.call(ui.stage,{navigationUI:"hide"}) : request.call(ui.stage);
+      Promise.resolve(result).then(changed,cancel);
+    } catch { cancel(); }
+  });
+  if (token !== fullToken || !frame) return;
+  if (!entered || !fullscreenActive()) { fullRequested = false; ui.fullscreenHelp.hidden = false; }
   fullPending = false; fullUi();
 }
 for (const name of ["fullscreenchange","webkitfullscreenchange"]) document.addEventListener(name, () => {
-  if ((document.fullscreenElement || document.webkitFullscreenElement) && (!fullRequested || !frame)) void exitFull();
-  else fullUi();
+  const element = fullscreenElement();
+  if (element === frame && frame) {
+    // Respect fullscreen initiated inside the current VDO player.
+    fullToken++; fullPending = false; fullRequested = stageOwned; cancelFullRequest?.();
+    ui.fullscreenHelp.hidden = true; fullUi();
+  } else if (element === ui.stage && (!fullRequested || !frame)) void exitFull();
+  else if (element && ui.screen.contains(element) && element !== frame) void exitFull();
+  else {
+    if (element === ui.stage) stageOwned = true;
+    if (!element) { stageOwned = false; if (!fullPending) fullRequested = false; }
+    fullUi();
+  }
 });
 document.addEventListener("keydown", event => {
   if (event.key === "Escape" && fullscreenActive()) { event.preventDefault(); void exitFull(); }
-  if (event.key === "Tab" && ui.stage.classList.contains("window-full") && document.activeElement === ui.exitFull) { event.preventDefault(); frame?.focus(); }
 });
 ui.joinForm.addEventListener("submit", event => { event.preventDefault(); if (!frame) join(); });
 ui.code.addEventListener("input", () => { ui.code.value = ui.code.value.replace(/\D/g,"").slice(0,4); ui.code.setAttribute("aria-invalid","false"); });

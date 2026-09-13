@@ -25,7 +25,7 @@ Beenden: Tab-Freigabe stoppen und den Sender-Tab schließen. Um jemandem den wei
 - Großer Status: Offline → Player lädt → Verbinden → Live. Live erfordert eingehende Video-Metriken, nicht bloß eine offene Webseite.
 - Eine Player-Instanz pro Start. Keine automatische Schleife, die den ganzen Player während des Verbindungsaufbaus neu lädt.
 - Wiederherstellung über VDO.Ninja; bei Videostillstand ein zusätzlicher Keyframe-Versuch. **Neu verbinden** startet auf Wunsch einen neuen Versuch. **Beenden** bleibt beendet, auch nach Rückkehr des Internets.
-- Native Vollbildfunktion mit Fenster-Vollbild als Ausweichlösung und sichtbarem Schließen-Knopf.
+- Echtes Browser-Vollbild mit ausgeblendeter Browser-Navigation, soweit der Browser das erlaubt, und sichtbarem Schließen-Knopf. Keine bloße Fenstervergrößerung als Ersatz. Auch Vollbild aus dem eingebetteten Player wird nicht vom übergeordneten Fenster abgebrochen. Wenn ein Vorschaufenster Vollbild sperrt, erscheint ein eigener Hinweis: Zuschauer-Link direkt in Chrome oder Edge öffnen. Die Sperre selbst kann eine Webseite nicht umgehen.
 - Keine eigene zusätzliche Klickfläche vor dem Videobild. Browser können trotzdem Ton-Autoplay blockieren; dann den sichtbaren Wiedergabeknopf im Player oder die Ton-Steuerung benutzen. Eine Browser-Freigabe lässt sich nicht zuverlässig umgehen.
 - Der Code wird nicht in Browser-Speichern oder der URL der GitHub-Seite abgelegt. An VDO.Ninja wird er im URL-Fragment für dessen Passwort-Funktion übergeben.
 

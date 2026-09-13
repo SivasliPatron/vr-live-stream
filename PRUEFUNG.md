@@ -42,3 +42,12 @@ Diese lokalen Browser-Prüfungen simulieren den fremden Videodienst. Sie allein 
 5. Normalen Neustart mit neuem Code und den 720p30-Fallback mit unverändertem Code prüfen.
 
 Öffentliche HTTPS-Auslieferung und Pages-Build werden nach dem Push separat kontrolliert. Eine erfolgreiche Veröffentlichung ist kein Ersatz für diese Hardware-Prüfung.
+
+## Ergänzung: echtes Vollbild
+
+- Der Nutzer bestätigt den funktionierenden Stream. Sender, Stream-Konfiguration und Zugangscode bleiben bei dieser Änderung unangetastet; keine erneute Verbindung mit dem echten Sender für diese Prüfung.
+- CSS-Fenstervergrößerung entfernt. Der Klick fordert natives Vollbild mit `navigationUI: "hide"` an; tatsächlicher Browserzustand und Vollbild-Ereignisse entscheiden über Erfolg. Bei fehlender Unterstützung oder Ablehnung bleibt ein eigener Hinweis sichtbar.
+- Vollbild, das im eingebetteten Player begonnen wird, wird nicht mehr sofort von der Zuschauer-Seite beendet. Stop, verspätete Antworten, Zeitüberschreitungen und prefixed APIs sind abgesichert.
+- 22 Browser-Prüfungen und 14 Node-Prüfungen bestanden. Natives Vollbild des äußeren Players inklusive vollständiger Viewport-Fläche sowie direkt im Iframe begonnenes Vollbild wurden in installiertem Chrome (headless, simulierter Videodienst) geprüft. Keine Behauptung einer Prüfung im gerade geöffneten Vorschaufenster oder auf einem Smartphone.
+- Ein zusätzlicher Versuch mit zwei übereinanderliegenden nativen Vollbild-Ebenen konnte in headless Chrome nicht vollständig bestätigt werden: Das innere Dokument meldete keinen eigenen Vollbildzustand. Die zugehörigen verschachtelten Zustandswechsel wurden separat mit simulierten Ereignissen geprüft.
+- Browser oder einbettende Anwendungen können echtes Vollbild sperren. Diese Berechtigung wird nicht umgangen; der Hinweis empfiehlt den Zuschauer-Link direkt in Chrome oder Edge. Hintergrund: [Fullscreen API](https://developer.mozilla.org/en-US/docs/Web/API/Element/requestFullscreen).

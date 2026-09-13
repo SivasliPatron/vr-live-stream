@@ -137,13 +137,81 @@ test("Offline prevents joining; network changes preserve current frame",async t=
   assert.ok(page.frames().includes(frame));
   await context.setOffline(false);
 });
-test("Blocked native fullscreen uses full-window mode with an exit",async t=>{
-  const {page}=await pageFor(t,390); await start(page);
+test("Blocked native fullscreen never enlarges the window and keeps persistent help",async t=>{
+  const {page}=await pageFor(t,390); const frame=await start(page);
+  const before=await page.locator("#stage").boundingBox();
   await page.evaluate(()=>{document.querySelector("#stage").requestFullscreen=()=>Promise.reject(Error("blocked"));});
-  await page.locator("#fullscreen").click(); await page.waitForFunction(()=>document.querySelector("#stage").classList.contains("window-full"));
-  assert.equal(await page.locator(".controls").evaluate(el=>el.inert),true);
-  assert.equal(await page.locator("#exitFull").isVisible(),true);
+  await page.locator("#fullscreen").click(); await page.locator("#fullscreenHelp").waitFor({state:"visible"});
+  assert.equal(await page.locator("#stage").evaluate(el=>getComputedStyle(el).position),"relative");
+  assert.deepEqual(await page.locator("#stage").boundingBox(),before);
+  assert.equal(await page.locator("#fullscreen").getAttribute("aria-pressed"),"false");
+  assert.equal(await page.locator("#exitFull").isVisible(),false);
+  assert.equal(await page.locator(".controls").evaluate(el=>el.inert),false);
+  assert.equal(await page.locator("#stage").getAttribute("aria-modal"),null);
+  await emit(frame,{v:{_type:"video",_framesDecoded:1}});await state(page,"live");
+  assert.equal(await page.locator("#fullscreenHelp").isVisible(),true);
+});
+test("Unavailable and policy-disabled fullscreen produce help without a request",async t=>{
+  const {page}=await pageFor(t);await start(page);
+  await page.evaluate(()=>{
+    window.fullCalls=0;
+    document.querySelector("#stage").requestFullscreen=()=>{window.fullCalls++;};
+    Object.defineProperty(document,"fullscreenEnabled",{configurable:true,get:()=>false});
+  });
+  await page.locator("#fullscreen").click();assert.equal(await page.evaluate(()=>window.fullCalls),0);
+  assert.equal(await page.locator("#fullscreenHelp").isVisible(),true);
+  await page.evaluate(()=>{
+    delete document.fullscreenEnabled;
+    document.querySelector("#stage").requestFullscreen=undefined;
+    document.querySelector("#stage").webkitRequestFullscreen=undefined;
+  });
+  await page.locator("#fullscreen").click();assert.equal(await page.locator("#fullscreenHelp").isVisible(),true);
+  assert.equal(await page.locator(".controls").evaluate(el=>el.inert),false);
+});
+test("Synchronous failure can be retried with a native hide-navigation request",async t=>{
+  const {page}=await pageFor(t);await start(page);
+  await page.evaluate(()=>{document.querySelector("#stage").requestFullscreen=()=>{throw Error("blocked");};});
+  await page.locator("#fullscreen").click();assert.equal(await page.locator("#fullscreenHelp").isVisible(),true);
+  await page.evaluate(()=>{
+    document.querySelector("#stage").requestFullscreen=function(options){window.fullOptions=options;return Element.prototype.requestFullscreen.call(this,options);};
+  });
+  await page.locator("#fullscreen").click();await page.waitForFunction(()=>document.fullscreenElement?.id==="stage");
+  assert.deepEqual(await page.evaluate(()=>window.fullOptions),{navigationUI:"hide"});
+  assert.equal(await page.locator("#fullscreenHelp").isVisible(),false);
   await page.locator("#exitFull").click();
+});
+test("Prefixed fullscreen may complete after its void return",async t=>{
+  const {page}=await pageFor(t);await page.clock.install();await start(page);
+  await page.evaluate(()=>{
+    const stage=document.querySelector("#stage");stage.requestFullscreen=undefined;
+    stage.webkitRequestFullscreen=()=>{setTimeout(()=>{Object.defineProperty(document,"webkitFullscreenElement",{configurable:true,get:()=>stage});document.dispatchEvent(new Event("webkitfullscreenchange"));},2000);};
+  });
+  await page.locator("#fullscreen").click();await page.clock.runFor(2100);
+  assert.equal(await page.locator("#fullscreen").getAttribute("aria-pressed"),"true");
+  assert.equal(await page.locator("#fullscreenHelp").isVisible(),false);
+  assert.equal(await page.locator("#exitFull").isVisible(),true);
+});
+test("A timed-out native request cannot create fake or late fullscreen",async t=>{
+  const {page}=await pageFor(t);await page.clock.install();await start(page);
+  await page.evaluate(()=>{
+    document.querySelector("#stage").requestFullscreen=()=>new Promise(()=>{});
+    document.exitFullscreen=()=>{delete document.fullscreenElement;document.dispatchEvent(new Event("fullscreenchange"));return Promise.resolve();};
+  });
+  await page.locator("#fullscreen").click();await page.clock.runFor(5100);
+  assert.equal(await page.locator("#fullscreenHelp").isVisible(),true);
+  assert.equal(await page.locator("#fullscreen").getAttribute("aria-pressed"),"false");
+  await page.evaluate(()=>{
+    Object.defineProperty(document,"fullscreenElement",{configurable:true,get:()=>document.querySelector("#stage")});document.dispatchEvent(new Event("fullscreenchange"));
+  });
+  assert.equal(await page.evaluate(()=>Boolean(document.fullscreenElement)),false);
+  assert.equal(await page.locator(".controls").evaluate(el=>el.inert),false);
+});
+test("Stop cancels pending fullscreen and ignores a later failure",async t=>{
+  const {page}=await pageFor(t);await page.clock.install();await start(page);
+  await page.evaluate(()=>{document.querySelector("#stage").requestFullscreen=()=>new Promise((resolve,reject)=>{window.rejectFull=reject;});});
+  await page.locator("#fullscreen").click();await page.locator("#stop").click();
+  await page.evaluate(()=>window.rejectFull(Error("late")));await page.clock.runFor(6000);
+  await state(page,"idle");assert.equal(await page.locator("#fullscreenHelp").isVisible(),false);
   assert.equal(await page.locator(".controls").evaluate(el=>el.inert),false);
   assert.equal(await page.locator("#stage").getAttribute("aria-modal"),null);
 });
@@ -162,7 +230,40 @@ test("Native fullscreen opens and closes in installed Chrome",async t=>{
   const {page}=await pageFor(t); await start(page);
   await page.locator("#fullscreen").click();
   await page.waitForFunction(()=>document.fullscreenElement?.id==="stage");
+  assert.ok(await page.locator("#stage").evaluate(el=>{
+    const box=el.getBoundingClientRect();return box.x===0&&box.y===0&&Math.abs(box.width-innerWidth)<1&&Math.abs(box.height-innerHeight)<1;
+  }));
+  assert.equal(await page.locator("#stage").evaluate(el=>getComputedStyle(el).borderRadius),"0px");
   await page.locator("#exitFull").click(); await page.waitForFunction(()=>!document.fullscreenElement);
+  assert.equal(await page.locator(".controls").evaluate(el=>el.inert),false);
+  assert.equal(await page.locator("#fullscreen").evaluate(el=>document.activeElement===el),true);
+});
+test("Native fullscreen initiated inside the player remains open",async t=>{
+  const {page}=await pageFor(t);const frame=await start(page);
+  await frame.evaluate(()=>{document.body.addEventListener("click",()=>document.body.requestFullscreen());});
+  await frame.locator("p").click();
+  await page.waitForFunction(()=>document.fullscreenElement===document.querySelector("iframe[data-active]"));
+  assert.equal(await frame.evaluate(()=>document.fullscreenElement===document.body),true);
+  assert.equal(await page.locator("#fullscreen").getAttribute("aria-pressed"),"true");
+  assert.equal(await page.locator("#exitFull").getAttribute("hidden"),"");
+  await frame.evaluate(()=>document.exitFullscreen());
+  await page.waitForFunction(()=>!document.fullscreenElement);
+  assert.equal(await page.locator(".controls").evaluate(el=>el.inert),false);
+});
+test("Simulated nested events preserve accepted stage fullscreen ownership",async t=>{
+  const {page}=await pageFor(t);await start(page);
+  await page.locator("#fullscreen").click();await page.waitForFunction(()=>document.fullscreenElement?.id==="stage");
+  await page.evaluate(()=>{
+    Object.defineProperty(document,"fullscreenElement",{configurable:true,get:()=>document.querySelector("iframe[data-active]")});
+    document.dispatchEvent(new Event("fullscreenchange"));
+  });
+  assert.equal(await page.locator("#exitFull").getAttribute("hidden"),"");
+  await page.evaluate(()=>{delete document.fullscreenElement;document.dispatchEvent(new Event("fullscreenchange"));});
+  await page.waitForFunction(()=>document.fullscreenElement?.id==="stage");
+  assert.equal(await page.locator("#exitFull").isVisible(),true);
+  assert.equal(await page.locator(".controls").evaluate(el=>el.inert),true);
+  await page.locator("#exitFull").click();await page.waitForFunction(()=>!document.fullscreenElement);
+  assert.equal(await page.locator(".controls").evaluate(el=>el.inert),false);
 });
 test("Responsive layout has no horizontal overflow at 320–1440px",async t=>{
   const {page}=await pageFor(t);

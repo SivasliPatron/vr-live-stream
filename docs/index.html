@@ -8,8 +8,8 @@
   <meta name="description" content="Dein privater Quest-Livestream. Code eingeben und zuschauen.">
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; frame-src https://steveseguin.github.io/vdo.ninja/; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
   <title>VR Live</title>
-  <link rel="stylesheet" href="./style.css?v=2">
-  <script type="module" src="./viewer.js?v=2"></script>
+  <link rel="stylesheet" href="./style.css?v=3">
+  <script type="module" src="./viewer.js?v=3"></script>
 </head>
 <body>
   <main class="shell">
@@ -38,11 +38,12 @@
       </form>
       <div class="actions">
         <button id="sound" type="button" disabled aria-pressed="true">Ton an</button>
-        <button id="fullscreen" type="button" disabled aria-controls="stage">Vollbild</button>
+        <button id="fullscreen" type="button" disabled aria-controls="stage" aria-pressed="false">Vollbild</button>
         <button id="reconnect" type="button" disabled>Neu verbinden</button>
         <button id="stop" class="subtle" type="button" hidden>Beenden</button>
       </div>
     </section>
+    <p id="fullscreenHelp" class="notice fullscreen-help" role="status" hidden>Echtes Vollbild ist hier nicht verfügbar oder wurde blockiert. Öffne den Zuschauer-Link direkt in Chrome oder Edge statt in einem Vorschaufenster und klicke dort auf Vollbild.</p>
     <p id="notice" class="notice" aria-live="polite">Nur zuschauen. Kamera und Mikrofon bleiben aus.</p>
     <noscript><p>Bitte JavaScript aktivieren, um den Stream anzusehen.</p></noscript>
   </main>
