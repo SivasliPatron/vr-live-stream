@@ -2,8 +2,8 @@
 export const transport = Object.freeze({
   base: "https://steveseguin.github.io/vdo.ninja/",
   salt: "vdo.ninja",
-  // Public VDO.Ninja fallback credentials, not the stream's publishing key.
-  turn: "steve;setupYourOwnPlease;turns:turn.obs.ninja:443",
+  // Let VDO obtain its current TURN list, including UDP and TLS relays.
+  // The former fixed endpoint/credentials no longer provided a usable relay.
   bitrate: "6000",
   buffer: "500",
 });
@@ -18,8 +18,8 @@ export function streamUrl(identity, code, { publisher = false, fps = 60, muted =
   const url = new URL(transport.base);
   // VDO's history URL rewrite can strip the password value from the fragment.
   // Preserve the original address so a reload keeps the same access code.
-  const common = { audience: identity.audience, salt: transport.salt, turn: transport.turn,
-    nohistory: "", autorecover: "1", autorelay: "1", screensharestereo: "" };
+  const common = { audience: identity.audience, salt: transport.salt,
+    nohistory: "", screensharestereo: "" };
   for (const [key, value] of Object.entries(common)) url.searchParams.set(key, value);
   url.searchParams.set(publisher ? "push" : "view", identity.id);
   if (publisher) {

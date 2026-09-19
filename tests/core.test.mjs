@@ -62,7 +62,18 @@ test("Sender URLs: 720p60 / 30 use same identity, PIN and transport",()=>{
     assert.equal(url.searchParams.get("screensharefps"),String(fps));
     assert.equal(url.searchParams.get("systemaudio"),"exclude");
     assert.equal(url.searchParams.get("salt"),transport.salt);
-    assert.equal(url.searchParams.get("turn"),transport.turn);
+    assert.equal(url.searchParams.has("turn"),false);
+    assert.equal(url.hash,"#password=0042");
+  }
+});
+test("Both roles use VDO's current TURN selection without obsolete fixed credentials or ignored recovery flags",()=>{
+  for(const options of [{},{nativeControls:true},{publisher:true,fps:60},{publisher:true,fps:30}]) {
+    const url=new URL(streamUrl(identity,"0042",options));
+    for(const key of ["turn","relay","privacy","autorecover","autorelay"]) {
+      assert.equal(url.searchParams.has(key),false,key);
+    }
+    assert.equal(url.searchParams.get("audience"),identity.audience);
+    assert.equal(url.searchParams.get("salt"),transport.salt);
     assert.equal(url.hash,"#password=0042");
   }
 });
