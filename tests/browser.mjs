@@ -167,7 +167,8 @@ test("Video-only fullscreen capability enables native viewer controls without a 
   assert.equal(await page.locator("#fullscreenHelp").isVisible(),false);
   const frame=await start(page);const original=frame.url();
   assert.equal(new URL(original).searchParams.has("videocontrols"),true);
-  assert.equal(new URL(original).searchParams.has("cleanoutput"),true);
+  assert.equal(new URL(original).searchParams.has("cleanish"),true);
+  assert.equal(new URL(original).searchParams.has("cleanoutput"),false);
   assert.equal(new URL(original).searchParams.has("fullscreenbutton"),false);
   assert.equal(await page.locator("#fullscreen").isVisible(),false);
   assert.match(await page.locator("#fullscreenHelp").textContent(),/tippe ins Video.*Vollbild-Symbol/);

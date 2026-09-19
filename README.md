@@ -27,7 +27,7 @@ Beenden: Tab-Freigabe stoppen und den Sender-Tab schließen. Um jemandem den wei
 - Wiederherstellung über VDO.Ninja; bei Videostillstand ein zusätzlicher Keyframe-Versuch. **Neu verbinden** startet auf Wunsch einen neuen Versuch. **Beenden** bleibt beendet, auch nach Rückkehr des Internets.
 - Echtes Browser-Vollbild mit ausgeblendeter Browser-Navigation, soweit der Browser das erlaubt, und sichtbarem Schließen-Knopf. Keine bloße Fenstervergrößerung als Ersatz. Auch Vollbild aus dem eingebetteten Player wird nicht vom übergeordneten Fenster abgebrochen. Wenn ein Vorschaufenster Vollbild sperrt, erscheint ein eigener Hinweis: Zuschauer-Link direkt im Browser öffnen. Die Sperre selbst kann eine Webseite nicht umgehen.
 - **iPhone / Safari:** Den Zuschauer-Link direkt in Safari öffnen, Code eingeben und starten. Sobald das Bild läuft, ins Video tippen und das Vollbild-Symbol in der Videoleiste wählen. Zurück mit **Fertig**. Die Seite aktiviert dafür Safaris native Videosteuerung; wenn nur Video-Vollbild unterstützt wird, entfällt der äußere Vollbild-Knopf. Falls Safari den Start oder Ton blockiert, im Video auf Play tippen. Der Sender muss dafür nicht neu gestartet werden.
-- Keine eigene zusätzliche Klickfläche vor dem Videobild. Browser können trotzdem Ton-Autoplay blockieren; dann den sichtbaren Wiedergabeknopf im Player oder die Ton-Steuerung benutzen. Eine Browser-Freigabe lässt sich nicht zuverlässig umgehen.
+- Keine eigene zusätzliche Klickfläche vor dem Videobild. Der Player behält seinen Play-Knopf, falls der Browser den automatischen Start blockiert. Dann **direkt im Videobild auf Play tippen**. Die äußere Ton-Steuerung schaltet den Ton an oder aus; sie ersetzt diesen Tap im Player nicht.
 - Der Code wird nicht in Browser-Speichern oder der URL der GitHub-Seite abgelegt. An VDO.Ninja wird er im URL-Fragment für dessen Passwort-Funktion übergeben.
 
 ## Verbindung und Qualitätsgrenzen
@@ -37,6 +37,8 @@ Beenden: Tab-Freigabe stoppen und den Sender-Tab schließen. Um jemandem den wei
 GitHub Pages liefert nur die Oberfläche aus und verteilt **nicht** den Videostream. Das ist überwiegend Peer-to-Peer: mehr Zuschauer bedeuten mehr Upload und möglicherweise mehr Encoderlast am Sender. Bei einem Ziel von 6 Mbit/s pro Zuschauer wären vier Zuschauer ungefähr 24 Mbit/s und sechs ungefähr 36 Mbit/s zuzüglich Protokoll-Overhead. Das sind Rechenbeispiele, keine gemessene oder garantierte Bandbreite. Der Sender erlaubt maximal sechs Zuschauer.
 
 Beide Seiten verwenden denselben offiziellen [VDO.Ninja-GitHub-Mirror](https://steveseguin.github.io/vdo.ninja/), denselben Passwort-Salt und einen expliziten öffentlichen TLS-TURN-Fallback. Der feste Relay-Eintrag vermeidet den beim bisherigen Aufbau beobachteten Wartepfad beim Laden der TURN-Liste. Direkte Verbindungen bleiben möglich. Ein Relay ist kein Verteiler für beliebig viele Zuschauer und kann selbst ausfallen.
+
+Bleibt die Seite bei **Verbinden** oder **Kein Bild**, zuerst den aktuellen Code über **00 Zugangscode anzeigen** abgleichen. Ein bewegtes Vorschaubild im Sender bestätigt die Aufnahme, aber noch keinen Empfang bei Zuschauern. Wenn auch ein zweiter Zuschauer kein Bild erhält: alle alten VDO.Ninja-Sender-Tabs schließen, **02 VR-Stream 720p60** einmal öffnen, den Casting-Tab mit Tab-Audio freigeben und den dabei neu angezeigten Code verwenden. Meta-Casting kann dabei geöffnet bleiben. Falls nur Safari einen Play-Knopf zeigt, genügt der direkte Tap darauf.
 
 Die angeforderten Werte sind 720p, 60 FPS, bewegungsoptimiertes Bild, Stereo-Tab-Audio, 6 Mbit/s Zuschauer-Zielrate und 500 ms Wiedergabepuffer. Eine zusätzliche Verkleinerung nur wegen der Player-Fenstergröße ist deaktiviert (`scale=100`). Der größere Puffer kann kurze Schwankungen abfangen, erhöht aber die Verzögerung. Browser, Quelle und Netzwerk bestimmen die tatsächlichen Werte; weder ein Puffer noch neuer Code garantieren ruckelfreies 720p60 bei zu wenig Upload.
 
@@ -91,6 +93,7 @@ Prüfstand und verbleibende Hardware-Tests stehen in [PRUEFUNG.md](PRUEFUNG.md).
 - [VDO.Ninja: Audience-Schlüssel](https://docs.vdo.ninja/advanced-settings/setup-parameters/and-audience)
 - [VDO.Ninja: Iframe-API](https://docs.vdo.ninja/guides/iframe-api-documentation)
 - [VDO.Ninja: Einbettung und Wiedergabe](https://docs.vdo.ninja/guides/how-to-use-vdo.ninja-on-a-website)
+- [VDO.Ninja: Play-Knopf bei blockiertem Autoplay erhalten](https://docs.vdo.ninja/advanced-settings/design-parameters/cleanish)
 - [VDO.Ninja: Native Videosteuerung und mobiles Vollbild](https://docs.vdo.ninja/advanced-settings/buttons-and-control-bar-parameters/and-videocontrols)
 - [WebKit: Benutzeraktion und eingebettete Seiten](https://webkit.org/blog/13862/the-user-activation-api/)
 - [VDO.Ninja: Quellcode und Architektur](https://github.com/steveseguin/vdo.ninja)

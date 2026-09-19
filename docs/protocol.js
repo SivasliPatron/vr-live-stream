@@ -25,7 +25,9 @@ export function streamUrl(identity, code, { publisher = false, fps = 60, muted =
       screensharecontenthint: "motion", displaysurface: "browser", systemaudio: "exclude", maxviewers: "6" };
     for (const [key, value] of Object.entries(capture)) url.searchParams.set(key, value);
   } else {
-    url.searchParams.set("cleanoutput", "");
+    // Keep VDO's in-player Play button for browsers that require a direct tap.
+    // cleanoutput suppresses that autoplay-recovery control; cleanish keeps it.
+    url.searchParams.set("cleanish", "");
     // Safari's native video controls provide iPhone fullscreen inside the iframe.
     if (nativeControls) url.searchParams.set("videocontrols", "");
     url.searchParams.set("screensharebitrate", transport.bitrate);

@@ -1,5 +1,5 @@
 import { channel } from "./channel.js?v=2";
-import { transport, codeIsValid, identityIsValid, streamUrl, videoSample, sampleAdvanced } from "./protocol.js?v=4";
+import { transport, codeIsValid, identityIsValid, streamUrl, videoSample, sampleAdvanced } from "./protocol.js?v=5";
 
 const $ = id => document.getElementById(id);
 const ui = Object.fromEntries(["status","statusText","screen","stage","welcome","joinForm","code","join","sound","fullscreen","fullscreenHelp","exitFull","reconnect","stop","notice"].map(id => [id,$(id)]));
@@ -37,7 +37,7 @@ function sound() {
   send({ mute: muted }); send({ volume: 1 });
   ui.sound.textContent = muted ? "Ton aus" : "Ton an";
   ui.sound.setAttribute("aria-pressed", String(!muted));
-  ui.sound.setAttribute("aria-label", muted ? "Ton einschalten" : "Ton ausschalten / Wiedergabe freigeben");
+  ui.sound.setAttribute("aria-label", muted ? "Ton einschalten" : "Ton ausschalten");
 }
 function retire() {
   const old = frame; frame = null;
@@ -70,7 +70,7 @@ function tick() {
   if (readyAt === null && now - started > 45000) {
     state("error", "Der Videodienst antwortet nicht. Neu verbinden oder später erneut versuchen.");
   } else if (!hasVideo && readyAt !== null && now - readyAt > 60000) {
-    state("error", "Noch kein Bild. Prüfe Sender und aktuellen Code. Der Player bleibt geöffnet.");
+    state("error", "Noch kein Bild. Vergleiche den Code mit „00 Zugangscode anzeigen“ am Sender-PC und prüfe die aktive Tab-Freigabe. Falls im Video Play erscheint, tippe darauf. Der Player wartet weiter.");
   } else if (hasVideo && now - lastProgress > 60000) {
     state("offline", "Kein Streamempfang mehr. Prüfe den Sender. Der Player wartet weiter auf eine Rückkehr.");
   } else if (hasVideo && now - lastProgress > 12000) {
@@ -100,7 +100,7 @@ function join() {
   current.addEventListener("load", () => { if (frame === current) { sound(); tick(); } });
   current.src = streamUrl(channel, code, { muted, parent:location.origin, nativeControls:nativeVideoFullscreen });
   ui.screen.append(current); controls(true); sound();
-  state("loading", "Der Player startet. Er fragt weder Kamera noch Mikrofon ab.");
+  state("loading", "Der Player startet. Falls im Videobild ein Play-Knopf erscheint, tippe direkt darauf. Kamera und Mikrofon bleiben aus.");
   poll = setInterval(tick, 2000); tick();
 }
 
@@ -111,12 +111,12 @@ window.addEventListener("message", event => {
   // VDO explicitly replies with null when its API is ready but no stream exists.
   if (data.stats !== null && (typeof data.stats !== "object" || Array.isArray(data.stats))) return;
   const now = performance.now();
-  if (readyAt === null) { readyAt = now; state("waiting", "Player bereit. Verbindung zum Sender wird aufgebaut."); }
+  if (readyAt === null) { readyAt = now; state("waiting", "Player bereit. Verbindung zum Sender wird aufgebaut. Falls Play im Videobild erscheint, tippe direkt darauf."); }
   const sample = videoSample(data.stats);
   if (!sample) return;
   if (sampleAdvanced(lastSample, sample)) {
     hasVideo = true; lastProgress = now; nudgeAt = 0;
-    if (phase !== "live") state("live", "Du bist live dabei. Falls der Browser Ton blockiert, Ton an/aus antippen.");
+    if (phase !== "live") state("live", "Du bist live dabei. Falls der Browser die Wiedergabe blockiert, tippe direkt im Videobild auf Play. Danach kannst du den Ton hier an- oder ausschalten.");
   }
   // Do not downgrade decoded-frame evidence to bytes after a missing metric.
   if (lastSample?.frames == null || sample.frames !== null || (sample.fps !== null && sample.stamp !== null)) lastSample = sample;

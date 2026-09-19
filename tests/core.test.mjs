@@ -70,11 +70,27 @@ test("Native video controls change only the viewer presentation",()=>{
   const normal = new URL(streamUrl(identity,"0042"));
   const safari = new URL(streamUrl(identity,"0042",{nativeControls:true}));
   assert.equal(safari.searchParams.has("videocontrols"),true);
-  assert.equal(safari.searchParams.has("cleanoutput"),true);
+  assert.equal(safari.searchParams.has("cleanish"),true);
+  assert.equal(safari.searchParams.has("cleanoutput"),false);
   assert.equal(safari.searchParams.has("fullscreenbutton"),false);
   safari.searchParams.delete("videocontrols");
   assert.equal(safari.href,normal.href);
   assert.equal(streamUrl(identity,"0042",{publisher:true,nativeControls:true}),streamUrl(identity,"0042",{publisher:true}));
+});
+test("Viewer keeps the in-player Play recovery button without changing sender presentation",()=>{
+  for (const nativeControls of [false,true]) {
+    const viewer = new URL(streamUrl(identity,"0042",{nativeControls}));
+    assert.equal(viewer.searchParams.has("cleanish"),true);
+    for (const parameter of ["cleanoutput","clean","hideplaybutton"]) {
+      assert.equal(viewer.searchParams.has(parameter),false,parameter);
+    }
+  }
+  for (const fps of [30,60]) {
+    const sender = new URL(streamUrl(identity,"0042",{publisher:true,fps}));
+    for (const parameter of ["cleanish","cleanoutput","clean","hideplaybutton","videocontrols"]) {
+      assert.equal(sender.searchParams.has(parameter),false,parameter);
+    }
+  }
 });
 test("Stats reject malformed, transport, audio and contradictory records",()=>{
   for (const stats of [null,[],"bad",{}, {audio:{_type:"audio",_last_bytes:100}},
