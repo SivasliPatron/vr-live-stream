@@ -16,6 +16,8 @@ Der neue Ordner liegt unter `C:\Users\WaitU\Desktop\VR Live`.
 
 **00 Zugangscode anzeigen** zeigt den bestehenden Code, ohne ihn zu ändern. **04 Zuschauer-Seite** öffnet die öffentliche Seite.
 
+Die Startlinks schützen den Code in der Senderadresse vor einer fehlerhaften Umschreibung durch VDO.Ninja (`nohistory`). Nach der Reparatur vom 20.09.2026 einen bereits geöffneten Sender schließen und über **02** neu öffnen: Neuladen eines alten, bereits verkürzten Links stellt den fehlenden Code nicht wieder her. Die Bildschirmfreigabe muss nach einem Neuladen erneut ausgewählt werden.
+
 Bei Rucklern zuerst mit nur einem Zuschauer prüfen. Für den vorbereiteten **720p30-Fallback** den aktuellen Sender schließen, dann **03 VR-Stream 720p30** öffnen und den Casting-Tab erneut teilen. Dabei bleibt der Code gleich. Die Auflösung wird weiterhin als 720p angefordert; 30 FPS bedeutet weniger flüssige Bewegung als 60 FPS.
 
 Beenden: Tab-Freigabe stoppen und den Sender-Tab schließen. Um jemandem den weiteren Zugang zu entziehen, **alle bisherigen Sender schließen**, anschließend über 02 neu starten und den neuen Code nur den gewünschten Personen geben. Es gibt keine individuelle Sperrliste; jemand mit dem neuen Code kann weiterhin zuschauen.

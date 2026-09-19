@@ -66,6 +66,15 @@ test("Sender URLs: 720p60 / 30 use same identity, PIN and transport",()=>{
     assert.equal(url.hash,"#password=0042");
   }
 });
+test("Every sender and viewer disables VDO history rewrites and keeps the PIN fragment-only",()=>{
+  for (const options of [{publisher:true,fps:60},{publisher:true,fps:30},{},{nativeControls:true}]) {
+    const url = new URL(streamUrl(identity,"0042",options));
+    assert.equal(url.searchParams.has("nohistory"),true);
+    assert.equal(url.searchParams.has("history"),false);
+    assert.equal(new URLSearchParams(url.hash.slice(1)).get("password"),"0042");
+    assert.equal(url.searchParams.has("password"),false);
+  }
+});
 test("Native video controls change only the viewer presentation",()=>{
   const normal = new URL(streamUrl(identity,"0042"));
   const safari = new URL(streamUrl(identity,"0042",{nativeControls:true}));
@@ -118,7 +127,13 @@ test("Fresh native FPS overrides VDO's cached legacy decoded-frame counter",()=>
 test("Random identity and code generation preserve leading zeroes and differ",()=>{
   const identities = Array.from({length:100},freshIdentity);
   assert.equal(new Set(identities.map(item=>item.publisher)).size,100);
-  for (const item of identities) { assert.ok(identityIsValid({id:item.id,audience:item.publisher})); assert.ok(codeIsValid(item.code)); assert.equal(item.viewer,null); }
+  assert.equal(new Set(identities.map(item=>item.id)).size,100);
+  for (const item of identities) {
+    assert.ok(identityIsValid({id:item.id,audience:item.publisher}));
+    assert.match(item.id,/^quest_[a-f0-9]{24}$/);
+    assert.equal(item.id,item.id.replace(/[\W]+/g,"_"),"VDO must not normalize a newly generated stream ID");
+    assert.ok(codeIsValid(item.code)); assert.equal(item.viewer,null);
+  }
   for (let i=0;i<100;i++) { const code=nextCode("0000"); assert.ok(codeIsValid(code)); assert.notEqual(code,"0000"); }
 });
 test("Fresh setup publishes only viewer identity and reuses private identity",async t=>{
@@ -132,6 +147,20 @@ test("Fresh setup publishes only viewer identity and reuses private identity",as
   assert.equal((await setup(directory,{request})).newIdentity,false);
   const current=JSON.parse(await readFile(join(directory,".private/session.json")));
   assert.equal(current.publisher,original.publisher);assert.equal(current.id,original.id);assert.equal(current.code,original.code);
+});
+test("Setup keeps legacy stream IDs and their publisher keys instead of silently rotating them",async t=>{
+  const directory=await temp(t);await mkdir(join(directory,"docs"));await mkdir(join(directory,".private"));
+  const original={id:"quest_AbCd_01234-56789",publisher:"test_publisher_0123456789abcdef012345",viewer:"test_viewer_123456",code:"0042",created:"2026-09-13T00:00:00.000Z"};
+  const path=join(directory,".private/session.json");
+  await writeFile(path,JSON.stringify(original));
+  const request=async url=>{
+    assert.equal(new URL(url).pathname,`/publish/${original.publisher}/token`);
+    return {ok:true,json:async()=>({token:original.viewer})};
+  };
+  assert.equal((await setup(directory,{request})).newIdentity,false);
+  assert.deepEqual(JSON.parse(await readFile(path)),original);
+  const publicText=await readFile(join(directory,"docs/channel.js"),"utf8");
+  assert.ok(publicText.includes(original.id));assert.equal(publicText.includes(original.publisher),false);
 });
 test("Setup never publishes the publisher key returned as audience token",async t=>{
   const directory=await temp(t);await mkdir(join(directory,"docs"));

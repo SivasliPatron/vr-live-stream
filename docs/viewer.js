@@ -1,5 +1,5 @@
 import { channel } from "./channel.js?v=2";
-import { transport, codeIsValid, identityIsValid, streamUrl, videoSample, sampleAdvanced } from "./protocol.js?v=5";
+import { transport, codeIsValid, identityIsValid, streamUrl, videoSample, sampleAdvanced } from "./protocol.js?v=6";
 
 const $ = id => document.getElementById(id);
 const ui = Object.fromEntries(["status","statusText","screen","stage","welcome","joinForm","code","join","sound","fullscreen","fullscreenHelp","exitFull","reconnect","stop","notice"].map(id => [id,$(id)]));

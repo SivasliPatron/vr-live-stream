@@ -6,7 +6,9 @@ import { codeIsValid } from "../docs/protocol.js";
 
 const root = fileURLToPath(new URL("../",import.meta.url));
 export function freshIdentity() {
-  return { id:`quest_${randomBytes(12).toString("base64url")}`, publisher:randomBytes(32).toString("base64url"),
+  // Stream IDs are normalized by VDO; hexadecimal preserves all 96 random bits
+  // without the hyphens that base64url may generate and VDO replaces.
+  return { id:`quest_${randomBytes(12).toString("hex")}`, publisher:randomBytes(32).toString("base64url"),
     code:String(randomInt(10000)).padStart(4,"0"), viewer:null, created:new Date().toISOString() };
 }
 export async function setup(directory = root, { request = fetch } = {}) {
@@ -21,7 +23,8 @@ export async function setup(directory = root, { request = fetch } = {}) {
     created = true;
     await writeFile(path,JSON.stringify(session,null,2),{flag:"wx",mode:0o600});
   }
-  if (!/^[A-Za-z0-9_-]{30,128}$/.test(session.publisher) || !/^quest_[A-Za-z0-9_-]{16}$/.test(session.id) || !codeIsValid(session.code)) {
+  // Keep existing identities intact, including the original 16-character form.
+  if (!/^[A-Za-z0-9_-]{30,128}$/.test(session.publisher) || !/^quest_(?:[A-Za-z0-9_-]{16}|[a-f0-9]{24})$/.test(session.id) || !codeIsValid(session.code)) {
     throw new Error("Die lokale Einrichtung ist ungültig.");
   }
   // VDO's HTTP token endpoint. Only the returned, distinct audience key is public.

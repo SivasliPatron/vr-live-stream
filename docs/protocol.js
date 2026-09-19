@@ -16,8 +16,10 @@ export function streamUrl(identity, code, { publisher = false, fps = 60, muted =
   if (!identityIsValid(identity) || !codeIsValid(code)) throw new Error("Ungültiger Stream-Zugang.");
   if (![30, 60].includes(fps)) throw new Error("Ungültige Bildrate.");
   const url = new URL(transport.base);
+  // VDO's history URL rewrite can strip the password value from the fragment.
+  // Preserve the original address so a reload keeps the same access code.
   const common = { audience: identity.audience, salt: transport.salt, turn: transport.turn,
-    autorecover: "1", autorelay: "1", screensharestereo: "" };
+    nohistory: "", autorecover: "1", autorelay: "1", screensharestereo: "" };
   for (const [key, value] of Object.entries(common)) url.searchParams.set(key, value);
   url.searchParams.set(publisher ? "push" : "view", identity.id);
   if (publisher) {
